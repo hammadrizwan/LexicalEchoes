@@ -1,0 +1,32 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Python cache
+__pycache__/
+
+#Files
+counterfact_easyedit_gemma_lexical_bias_violations_average.jsonl
+
+#folders
+common_pile_analysis/
+figures_counterfact/
+figures/
+results_counterfact/
+sts/
+PCA/
+quoraPD_analysis/
+layer_by_layer/
+general_distances/
+GPST_model/
+scpp_analysis/
+LinearProbe/
+Network_Learning/
+figures_entropy/
+counterfact_analysis/
