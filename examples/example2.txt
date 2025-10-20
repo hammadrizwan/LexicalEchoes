@@ -1,0 +1,8 @@
+// Example 2: Variable declarations and assignments
+int a = 5;
+int b = 10;
+int c;
+c = a;
+
+float pi = 3.14159;
+string message = "Hello, World!";
