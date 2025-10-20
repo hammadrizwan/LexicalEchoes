@@ -1,0 +1,5 @@
+// Example 1: Simple variable declarations
+int x = 10;
+float y = 3.14;
+string name = "John";
+bool flag = true;

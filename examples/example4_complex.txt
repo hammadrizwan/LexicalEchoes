@@ -1,0 +1,15 @@
+// Example 4: More complex code
+int count = 0;
+float average = 0.0;
+string username = "admin";
+bool isActive = true;
+
+// Assignments
+count = 100;
+average = 95.5;
+username = "user123";
+isActive = false;
+
+// Expressions
+int sum = 50;
+int product = 25;

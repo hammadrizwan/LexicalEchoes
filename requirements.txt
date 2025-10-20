@@ -1,0 +1,5 @@
+# LexicalEchoes Requirements
+# No external dependencies required - uses only Python standard library
+
+# Optional: For running tests with pytest
+pytest>=7.0.0

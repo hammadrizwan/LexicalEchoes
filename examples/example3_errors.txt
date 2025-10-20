@@ -1,0 +1,5 @@
+// Example 3: Code with semantic errors
+int x = 10;
+int x = 20;        // Error: x already declared
+y = 5;             // Error: y not declared
+int z = "hello";   // Error: type mismatch
