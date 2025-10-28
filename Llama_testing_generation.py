@@ -4,6 +4,7 @@ from quoraPD_analysis.distance_analysis import analyze_and_save_distances
 from transformers import AutoProcessor, Llama4ForConditionalGeneration
 import torch
 from sklearn.metrics import classification_report
+from get_token  import *
 """
 Llama 3.1 8B Instruct — Semantic Textual Similarity (STS), temperature 0
 No argparse. No quantization. Chat-format prompting.
@@ -88,7 +89,7 @@ def collate_text_pairs(batch):
     
 # ------------------------- USER SETTINGS -------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-access_token = "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"
+access_token = get_token()
 MODEL_ID = "meta-llama/Llama-4-Scout-17B-16E-Instruct"#update for 3.4. 17B
 MAX_NEW_TOKENS = 96
 # USE_BF16 = True   # set False to force fp16

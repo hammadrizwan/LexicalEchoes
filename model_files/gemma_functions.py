@@ -12,6 +12,12 @@ from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from helper_functions import apply_whitening_batch,bootstrap_ci_spearman,bootstrap_ci_los_q1q4,_jaccard_overlap_pct,_counts
 from scipy.stats import spearmanr
+import metric_functions as mf
+import matplotlib.pyplot as plt
+import numpy as np
+import sys
+sys.path.append('/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/layer_by_layer/experiments/')
+import repitl.difference_of_entropies as dent
 _spearman = lambda x, y: spearmanr(x, y, nan_policy="omit")
 from collections import defaultdict
 def load_model(model_name="gemma",access_token=None,device="auto"):
@@ -25,58 +31,7 @@ def load_model(model_name="gemma",access_token=None,device="auto"):
     )
     model.eval()
     return tokenizer, model
-PROMPT_AVG="""Act as a sentence embedding model for STS.
-Distribute the global meaning across content tokens so mean pooling over user tokens captures entities, numbers, dates/times, locations, modality, negation, conditionals, and event order. Ignore headers and formatting."""
-# 
-# """
-# You are a sentence embedding model for Semantic Textual Similarity (STS).
-# Your job is to produce token-level hidden states whose pooled vector encodes the full meaning of the input text so that semantically equivalent texts are close and non-equivalent texts are far in embedding space.
 
-# Objectives
-# - Optimize representations for **semantic equivalence**, not lexical overlap or style.
-# - Similarity should reflect **truth-conditional meaning**: entities, quantities, dates/times, locations, modality, negation, conditionals, and event order.
-# - Be invariant to superficial wording: tense changes, punctuation, synonyms, paraphrase, formatting, casing, and stopwords.
-
-# Sensitivity (what must change the embedding)
-# - Changes to entities, numbers, dates/times, locations.
-# - Polarity (negation), modality (may/must), hedges, and conditionals.
-# - Causal/event order or scope changes; added/removed facts.
-
-# Pooling-aware guidance
-# - The embedding is read via **mean pooling over tokens**, distribute the global meaning across **content tokens**, and keep format/role/special tokens minimally informative.
-
-# Robustness
-# - Avoid encoding prompt boilerplate or role/formatting tokens.
-# - Downweight spurious lexical cues and repeated surface forms.
-# - Keep representations stable across paraphrases and minor rephrasings.
-
-# Output behavior
-# - Do not emit explanations or extra text; focus on producing informative hidden states suitable for pooling into a single semantic vector."""
-
-PROMPT_LASTTOKEN="""
-You are a sentence embedding model for Semantic Textual Similarity (STS).
-Your job is to produce token-level hidden states whose pooled vector encodes the full meaning of the input text so that semantically equivalent texts are close and non-equivalent texts are far in embedding space.
-
-Objectives
-- Optimize representations for **semantic equivalence**, not lexical overlap or style.
-- Similarity should reflect **truth-conditional meaning**: entities, quantities, dates/times, locations, modality, negation, conditionals, and event order.
-- Be invariant to superficial wording: tense changes, punctuation, synonyms, paraphrase, formatting, casing, and stopwords.
-
-Sensitivity (what must change the embedding)
-- Changes to entities, numbers, dates/times, locations.
-- Polarity (negation), modality (may/must), hedges, and conditionals.
-- Causal/event order or scope changes; added/removed facts.
-
-Pooling-aware guidance
-- The embedding is read from the **last token**, place a compact **global summary** of the sentence meaning at the final position; avoid over-weighting recent/local tokens.
-
-Robustness
-- Avoid encoding prompt boilerplate or role/formatting tokens.
-- Downweight spurious lexical cues and repeated surface forms.
-- Keep representations stable across paraphrases and minor rephrasings.
-
-Output behavior
-- Do not emit explanations or extra text; focus on producing informative hidden states suitable for pooling into a single semantic vector."""
 #----------------------------------------------------------------------------
 # Section: Gemma PT Counterfact
 #----------------------------------------------------------------------------
@@ -115,27 +70,24 @@ def compute_intra_sentence_similarity(embeddings, mask, mean_norm, eps=1e-12,ave
         intra_sim: Tensor [L, B]
             Intra-sentence similarity per layer and batch.
     """
-    L, B, T, H = embeddings.shape
+     # Normalize token embeddings (safe even with zeroed padding)
+    emb_norm = embeddings / embeddings.norm(dim=-1, keepdim=True).clamp_min(eps)  # [L, B, T, H]
 
-    # Normalize token embeddings
-    emb_norm = embeddings / embeddings.norm(dim=-1, keepdim=True).clamp_min(eps)
-
-    # Expand normalized mean to match token dimension
+    # Expand mean embedding to match token dimension
     mean_norm_exp = mean_norm.unsqueeze(2)  # [L, B, 1, H]
 
     # Cosine similarities for each token
     cos_sim = (emb_norm * mean_norm_exp).sum(dim=-1)  # [L, B, T]
 
-    # Mask out padding
-    mask_bt = mask.squeeze(-1).unsqueeze(0)           # [1, B, T]
-    cos_sim = cos_sim * mask_bt
-
     # Average across valid tokens
-    valid_counts = mask_bt.sum(dim=2).clamp(min=1)    # [1, B]
-    intra_sim = cos_sim.sum(dim=2) / valid_counts     # [L, B]
+    valid_counts = mask.squeeze(-1).sum(dim=1, keepdim=True).clamp(min=1)  # [B, 1]
+    print("valid_counts",valid_counts.transpose(0, 1))
+    intra_sim = cos_sim.sum(dim=2) / valid_counts.transpose(0, 1)  # [L, B]
+    print("intra_sim",intra_sim)
     # Optionally average across batch
     if average_over_batch:
-        intra_sim = intra_sim.mean(dim=1)             # [L]
+        intra_sim = intra_sim.mean(dim=1)  # [L]
+
     return intra_sim
 
 def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"):
@@ -168,7 +120,7 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
     jaccard_scores_list_by_layer = defaultdict(list)
     signed_margins_by_layer = defaultdict(list)
 
-    intrasims_dict=defaultdict(list)
+    # intrasims_dict=defaultdict(list)
     l = layers
     
     with nethook.TraceDict(model, l) as ret:
@@ -190,13 +142,15 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                 anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
                 mask = inputs["attention_mask"].unsqueeze(-1)
                 if(args.mode):
+                    # print("Anchors",anchors)
                     padded_zero_embeddings=anchor_sentence_embeddings * mask
                     sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
                     lengths = mask.sum(dim=1)                                  # (B, L, 1)
                     anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-                    mean_norm = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                    intrasims= compute_intra_sentence_similarity(padded_zero_embeddings, mask, mean_norm, eps=1e-12)
-                    # print("intrasims",intrasims.shape)
+                    # mean_norm = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
+                    # print("mean_norm" ,mean_norm.shape)
+                    # intrasims= compute_intra_sentence_similarity(padded_zero_embeddings, mask, mean_norm, eps=1e-12)
+                    
                 else:
                     L, B, T, E = anchor_sentence_embeddings.shape
                     base_mask = mask.squeeze(-1).to(anchor_sentence_embeddings.dtype)
@@ -291,7 +245,7 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                         cos_ap = cosine_anchor_paraphrase[layer_idx, i].item()
                         cos_ad = cosine_anchor_distractor[layer_idx, i].item()
                         cos_pd = cosine_paraphrase_distractor[layer_idx, i].item()
-                        intrasim=intrasims[layer_idx,i].item()
+                        # intrasim=intrasims[layer_idx,i].item()
 
                         condition_anchor = dad < dap
                         condition_paraphrase = dpd < dap
@@ -316,7 +270,7 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                             jsonl_file_writer.write("\n")
 
                         # --- per-layer metric collectors ---
-                        intrasims_dict[layer_key].append(intrasim)
+                        # intrasims_dict[layer_key].append(intrasim)
                         all_fail_flags_by_layer[layer_key].append(1 if failure else 0)
                         all_viols_by_layer[layer_key].append(max(0.0, -possible_margin_violation))
                         LO_anchor_paraphrase_list_by_layer[layer_key].append(LO_ap)
@@ -364,7 +318,7 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                 LOc_arr = np.asarray(LOc_list_by_layer[layer_key], dtype=float)
                 DISTc_arr = np.asarray(DISTc_list_by_layer[layer_key], dtype=float)
                 all_viols_arr = np.asarray(all_viols_by_layer[layer_key], dtype=float)
-                intrasims_dict_arr = np.asarray(intrasims_dict[layer_key], dtype=float).mean()
+                # intrasims_dict_arr = np.asarray(intrasims_dict[layer_key], dtype=float).mean()
                 # print("intrasims_dict_arr",intrasims_dict_arr.shape)
                 # failure stats
                 total_samples_layer = len(all_fail_arr)
@@ -415,7 +369,7 @@ def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                 with open(summary_path, 'a') as jsonl_file_writer:
                     json.dump({
                         "layer": layer_key,
-                        "intrasims_dict": float(intrasims_dict_arr),
+                        # "intrasims_dict": float(intrasims_dict_arr),
                         "Failure Rate": failure_rate_layer,
                         "Average Margin Violation": avg_margin_violation_layer,
                         "FailRate_high_Q4": None if np.isnan(fail_rate_high) else fail_rate_high,
@@ -648,7 +602,7 @@ def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                 scores_overlap = batch.get("score_overlap", None).tolist()  # optional, list[float]
                 scores_containment = batch.get("score_containment", None).tolist()  # optional, list[float]
               
-                inputs = build_batched_chat_inputs(tokenizer, anchors, PROMPT_AVG, device=device)
+                inputs = build_batched_chat_inputs(tokenizer, anchors, "", device=device)
                 _ = model(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
@@ -678,7 +632,7 @@ def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
                     idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
                     anchor_sentence_embeddings = anchor_sentence_embeddings.gather(2, idx).squeeze(2)
                 #_________________________________________________________________________________________
-                inputs = build_batched_chat_inputs(tokenizer, paraphrases, PROMPT_AVG, device=device)
+                inputs = build_batched_chat_inputs(tokenizer, paraphrases, "", device=device)
                 _ = model(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
@@ -702,7 +656,7 @@ def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
 
                     
                 #_________________________________________________________________________________________
-                inputs = build_batched_chat_inputs(tokenizer, distractors, PROMPT_AVG, device=device)
+                inputs = build_batched_chat_inputs(tokenizer, distractors, "", device=device)
                 _ = model(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
@@ -925,376 +879,523 @@ def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
 
                
 
-
+def gemma_counterfact_dime(data_loader,args,access_token,layers,device="auto",mode="pt"):
+    tokenizer,model = load_model(args.model_type,access_token,device=device)
+    model.eval()
+    # Example: access specific fields
+    
+    embeddings_anchors=[]
+    embeddings_paraphrases=[]
+    embeddings_distractors=[]
+    l = layers
+    
+    with nethook.TraceDict(model, l) as ret:
+        with torch.no_grad():
+            for batch in tqdm(data_loader, desc="Processing Rows"):
+   
+                anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
+            
+              
+                inputs = build_batched_pt_inputs(tokenizer, anchors, device=device)
+                _ = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    output_hidden_states=True
+                ) 
+                anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+                mask = inputs["attention_mask"].unsqueeze(-1)
                 
-                
-
+                padded_zero_embeddings=anchor_sentence_embeddings * mask
+                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+                lengths = mask.sum(dim=1)                                  # (B, L, 1)
+                anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+                 
+                inputs = build_batched_pt_inputs(tokenizer, paraphrases, device=device)
+                _ = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    output_hidden_states=True
+                ) 
+                paraphrase_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+                mask = inputs["attention_mask"].unsqueeze(-1)
+                padded_zero_embeddings=paraphrase_sentence_embeddings * mask
+                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+                lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
+                paraphrase_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+                inputs = build_batched_pt_inputs(tokenizer, distractors, device=device)
+                _ = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    output_hidden_states=True
+                ) 
+                distractor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+                mask = inputs["attention_mask"].unsqueeze(-1)
+              
+                padded_zero_embeddings=distractor_sentence_embeddings * mask
+                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+                lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
+                distractor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
 
             
+                embeddings_anchors.append(anchor_sentence_embeddings.detach().cpu())
+                embeddings_paraphrases.append(paraphrase_sentence_embeddings.detach().cpu())
+                embeddings_distractors.append(distractor_sentence_embeddings.detach().cpu())
+
                 
                 
+        A = torch.cat(embeddings_anchors,     dim=1)  # [L, B_total, D]
+        P = torch.cat(embeddings_paraphrases, dim=1)  # [L, B_total, D]
+        D = torch.cat(embeddings_distractors, dim=1)  # [L, B_total, D]
+        A = torch.stack([mf.normalize(A[l]) for l in range(A.shape[0])])  # [L, N, D]
+        P = torch.stack([mf.normalize(P[l]) for l in range(P.shape[0])])  # [L, N, D]
+        D = torch.stack([mf.normalize(D[l]) for l in range(D.shape[0])])  # [L, N, D]
+        print(type(A), type(P), type(D))
+        print(A.shape, P.shape, D.shape)
+        print("A",A.unsqueeze(2).shape)
+        print("P",P.unsqueeze(2).shape)
+        print("D",D.unsqueeze(2).shape)
+        # Build the two view-pairs you want to compare:
+        # 1) [anchor, paraphrase]
+        L, B, Demb = A.shape
+        hidden_AP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+        hidden_AP[:, :, 0, :] = A
+        hidden_AP[:, :, 1, :] = P
+        print(hidden_AP.shape)
+        hidden_DA = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+        hidden_DA[:, :, 0, :] = A
+        hidden_DA[:, :, 1, :] = D
+        print(hidden_AP.shape)
+        hidden_DP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+        hidden_DP[:, :, 0, :] = P
+        hidden_DP[:, :, 1, :] = D
+        # Compute DiME for each pair (your compute_dime does the permute internally):
+        dime_AP = mf.compute_dime(hidden_AP, alpha=1.0, normalizations=['raw'])
+        dime_DA = mf.compute_dime(hidden_DA, alpha=1.0, normalizations=['raw'])
+        dime_DP = mf.compute_dime(hidden_DP, alpha=1.0, normalizations=['raw'])
+        print("DIMES computed.")
+        ap = np.array(dime_AP['raw'])
+        da = np.array(dime_DA['raw'])
+        dp = np.array(dime_DP['raw'])
+        layers = np.arange(len(ap))
 
-  
+        #############################################
+        # SAVE 'ap' IN dCor-COMPATIBLE FORMAT
+        #############################################
+
+        # Build { "0": <ap_at_layer_0>, "1": <ap_at_layer_1>, ... }
+        ap_dict = {
+            str(int(layer_idx)): float(val)
+            for layer_idx, val in enumerate(ap)
+        }
+
+        out_dir = "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/"
+        os.makedirs(out_dir, exist_ok=True)
+
+        ap_json_path = os.path.join(
+            out_dir,
+            f"{args.model_type}_dime_AP.json"  # <-- this is what you'll feed into dCor code
+        )
+
+        with open(ap_json_path, "w") as f:
+            json.dump(ap_dict, f)  # no indent needed for loading
+
+        print(f"[ok] wrote AP per-layer DiME (anchor–paraphrase) to {ap_json_path}")
+#############################################
 
 
+        plt.figure(figsize=(10,5))
+        plt.plot(layers, ap, marker='o', label='DiME (anchor–paraphrase)')
+        plt.plot(layers, da, marker='o', label='DiME (anchor–distractor)')
+        plt.plot(layers, dp, marker='o', label='DiME (paraphrase–distractor)')
+        plt.xlabel("Layer")
+        plt.ylabel("DiME (raw)")
+        plt.title("DiME per Layer")
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_dime_layers_AP_vs_DA.png", dpi=1000)
+        # plt.show()
+
+        
+        InfoNCE_AP = mf.compute_infonce(hidden_AP)
+        InfoNCE_DA = mf.compute_infonce(hidden_DA)
+        InfoNCE_DP = mf.compute_infonce(hidden_DP)
+        print("DIMES computed.")
+        ap = np.array(InfoNCE_AP['raw'])
+        da = np.array(InfoNCE_DA['raw'])
+        dp = np.array(InfoNCE_DP['raw'])
+        layers = np.arange(len(ap))
+
+        plt.figure(figsize=(10,5))
+        plt.plot(layers, ap, marker='o', label='InfoNCE (anchor–paraphrase)')
+        plt.plot(layers, da, marker='o', label='InfoNCE (anchor–distractor)')
+        plt.plot(layers, dp, marker='o', label='InfoNCE (paraphrase–distractor)')
+        plt.xlabel("Layer")
+        plt.ylabel("InfoNCE (raw)")
+        plt.title("InfoNCE per Layer")
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_InfoNCE_layers_AP_vs_DA.png", dpi=1000)
 
 
-def gemma_test_direct_counterfact_easyedit(file_path,model,file_save_path,tokenizer,device):
-    # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
-    counter=1
-    for name, module in model.named_modules():
-        print(name, ":", module.__class__.__name__)
+# def gemma_test_direct_counterfact_easyedit(file_path,model,file_save_path,tokenizer,device):
+#     # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+#     counter=1
+#     for name, module in model.named_modules():
+#         print(name, ":", module.__class__.__name__)
 
  
 
-    # Read the JSON file
-    with open(file_path, "r", encoding="utf-8") as file:
-        data = json.load(file)
+#     # Read the JSON file
+#     with open(file_path, "r", encoding="utf-8") as file:
+#         data = json.load(file)
 
-    # If it's a list of dictionaries, convert to DataFrame
-    df = pd.DataFrame(data)
-
-
-    # Example: access specific fields
-    total_samples=0
-    fails=0
-    l=["model.layers.27"]
-    with open(file_save_path, 'w') as jsonl_file_writer:
-        with nethook.TraceDict(model, l) as ret:
-            with torch.no_grad():
-                for row in tqdm(data, desc="Processing rows"):
-                    inputs=tokenizer(row["prompt"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    caption_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
-
-                    inputs=tokenizer(row["rephrase_prompt"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    caption2_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
+#     # If it's a list of dictionaries, convert to DataFrame
+#     df = pd.DataFrame(data)
 
 
-                    inputs=tokenizer(row["locality_prompt"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    negative_caption_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
+#     # Example: access specific fields
+#     total_samples=0
+#     fails=0
+#     l=["model.layers.27"]
+#     with open(file_save_path, 'w') as jsonl_file_writer:
+#         with nethook.TraceDict(model, l) as ret:
+#             with torch.no_grad():
+#                 for row in tqdm(data, desc="Processing rows"):
+#                     inputs=tokenizer(row["prompt"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     caption_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
 
-                    # caption_tensor = model.encode([row["prompt"]], convert_to_tensor=True).squeeze(0)
-                    # caption2_tensor = model.encode([row["rephrase_prompt"]], convert_to_tensor=True).squeeze(0)
-                    # negative_caption_tensor = model.encode([row["locality_prompt"]], convert_to_tensor=True).squeeze(0)
-                    caption_tensor = torch.nn.functional.normalize(caption_tensor, p=2, dim=0)
-                    caption2_tensor = torch.nn.functional.normalize(caption2_tensor, p=2, dim=0)
-                    negative_caption_tensor = torch.nn.functional.normalize(negative_caption_tensor, p=2, dim=0)
-                                    # --- Cosine similarities ---
-                    cos_cap1_cap2   = F.cosine_similarity(caption_tensor, caption2_tensor, dim=0).item()
-                    cos_cap1_neg    = F.cosine_similarity(caption_tensor, negative_caption_tensor, dim=0).item()
-                    cos_cap2_neg    = F.cosine_similarity(caption2_tensor, negative_caption_tensor, dim=0).item()
-
-                    # --- Euclidean distances ---
-                    dist_cap1_cap2  = torch.norm(caption_tensor - caption2_tensor, p=2).item()
-                    dist_cap1_neg   = torch.norm(caption_tensor - negative_caption_tensor, p=2).item()
-                    dist_cap2_neg   = torch.norm(caption2_tensor - negative_caption_tensor, p=2).item()
+#                     inputs=tokenizer(row["rephrase_prompt"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     caption2_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
 
 
-                    json_item={"distance_failure": ((dist_cap1_neg < dist_cap1_cap2 or dist_cap2_neg < dist_cap1_cap2)),
-                                                "similarity_failure": ((cos_cap1_neg > cos_cap1_cap2 or cos_cap2_neg > cos_cap1_cap2)),
-                                                "distances":{"dist_cap1_cap2":dist_cap1_cap2,"dist_cap1_neg":dist_cap1_neg,"dist_cap2_neg":dist_cap2_neg},
-                                                "similarities":{"cos_cap1_cap2":cos_cap1_cap2,"cos_cap1_neg":cos_cap1_neg,"cos_cap2_neg":cos_cap2_neg},
-                                                "caption":row["prompt"],"caption2":row["rephrase_prompt"],"negative_caption":row["locality_prompt"]}
+#                     inputs=tokenizer(row["locality_prompt"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     negative_caption_tensor=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
 
-                    if (dist_cap1_neg < dist_cap1_cap2 or dist_cap2_neg < dist_cap1_cap2) or (cos_cap1_neg > cos_cap1_cap2 or cos_cap2_neg > cos_cap1_cap2):
-                        fails+=1
+#                     # caption_tensor = model.encode([row["prompt"]], convert_to_tensor=True).squeeze(0)
+#                     # caption2_tensor = model.encode([row["rephrase_prompt"]], convert_to_tensor=True).squeeze(0)
+#                     # negative_caption_tensor = model.encode([row["locality_prompt"]], convert_to_tensor=True).squeeze(0)
+#                     caption_tensor = torch.nn.functional.normalize(caption_tensor, p=2, dim=0)
+#                     caption2_tensor = torch.nn.functional.normalize(caption2_tensor, p=2, dim=0)
+#                     negative_caption_tensor = torch.nn.functional.normalize(negative_caption_tensor, p=2, dim=0)
+#                                     # --- Cosine similarities ---
+#                     cos_cap1_cap2   = F.cosine_similarity(caption_tensor, caption2_tensor, dim=0).item()
+#                     cos_cap1_neg    = F.cosine_similarity(caption_tensor, negative_caption_tensor, dim=0).item()
+#                     cos_cap2_neg    = F.cosine_similarity(caption2_tensor, negative_caption_tensor, dim=0).item()
+
+#                     # --- Euclidean distances ---
+#                     dist_cap1_cap2  = torch.norm(caption_tensor - caption2_tensor, p=2).item()
+#                     dist_cap1_neg   = torch.norm(caption_tensor - negative_caption_tensor, p=2).item()
+#                     dist_cap2_neg   = torch.norm(caption2_tensor - negative_caption_tensor, p=2).item()
+
+
+#                     json_item={"distance_failure": ((dist_cap1_neg < dist_cap1_cap2 or dist_cap2_neg < dist_cap1_cap2)),
+#                                                 "similarity_failure": ((cos_cap1_neg > cos_cap1_cap2 or cos_cap2_neg > cos_cap1_cap2)),
+#                                                 "distances":{"dist_cap1_cap2":dist_cap1_cap2,"dist_cap1_neg":dist_cap1_neg,"dist_cap2_neg":dist_cap2_neg},
+#                                                 "similarities":{"cos_cap1_cap2":cos_cap1_cap2,"cos_cap1_neg":cos_cap1_neg,"cos_cap2_neg":cos_cap2_neg},
+#                                                 "caption":row["prompt"],"caption2":row["rephrase_prompt"],"negative_caption":row["locality_prompt"]}
+
+#                     if (dist_cap1_neg < dist_cap1_cap2 or dist_cap2_neg < dist_cap1_cap2) or (cos_cap1_neg > cos_cap1_cap2 or cos_cap2_neg > cos_cap1_cap2):
+#                         fails+=1
                 
-                        json.dump(json_item, jsonl_file_writer)
-                        jsonl_file_writer.write("\n")
+#                         json.dump(json_item, jsonl_file_writer)
+#                         jsonl_file_writer.write("\n")
 
-                    total_samples+=1
+#                     total_samples+=1
 
-            print("Accuracy:", (total_samples - fails) / total_samples if total_samples > 0 else 0)
-            json.dump({"Accuracy": (total_samples - fails) / total_samples if total_samples > 0 else 0  }, jsonl_file_writer)
-            jsonl_file_writer.write("\n")
-                
-
-def gemma_embeddings_analysis_counterfact_lasttoken(file_path,model,tokenizer,file_save_path,device):
-    # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
-    counter=1
-
-    # l=["encoder.block.6.layer.1.DenseReluDense.wo"]
-    l=["model.layers.27"]
-    with open(file_save_path, 'w') as jsonl_file_writer:
-        with nethook.TraceDict(model, l) as ret:
-            with torch.no_grad():
-                # for batch in tqdm(data_loader, desc="Processing batches", leave=False):
-                for i in tqdm(range(500), desc="Processing 500 steps"):
-                    data_dict={}
-                    data_entry = json.loads(linecache.getline(file_path, counter).strip())
-                    # print(data_entry.keys())
-                    torch.cuda.empty_cache()
-                    # print(data_entry["edited_prompt"])
-                    data_entry["vector_edited_prompt"]=[]
-                    inputs=tokenizer(data_entry["edited_prompt"][0], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    data_dict["edit_tensor"]=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
-                    
-                    # print([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0].shape)
-                    
-                    # data_entry["vector_edited_prompt"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
-                    torch.cuda.empty_cache()
-                    # data_entry["vector_edited_prompt_paraphrases_processed"]=[]
-                    data_dict["paraphrases_vectors"]=[]
-                    paraphrase_strings=[]
-                    inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
-                    paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed"])
-                    # data_entry["vector_edited_prompt_paraphrases_processed"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
-                    
-                    # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[]
-                    torch.cuda.empty_cache()
-                    
-                    inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed_testing"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
-                    data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
-                    paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed_testing"])
-
-                    data_dict["locality_vectors"]=[]
-                    locality_strings=[]
-                    # data_entry["vectors_neighborhood_prompts_high_sim"]=[]
-                    for string in data_entry["neighborhood_prompts_high_sim"]:
-                        torch.cuda.empty_cache()
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
-                        locality_strings.append(string)
-                        # data_entry["vectors_neighborhood_prompts_high_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
-
-                    # data_entry["vectors_neighborhood_prompts_low_sim"]=[]
-                    
-                    for string in data_entry["neighborhood_prompts_low_sim"]:
-                        torch.cuda.empty_cache()
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
-                        locality_strings.append(string)
-                        # data_entry["vectors_neighborhood_prompts_low_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
-
-                    for string in data_entry["openai_usable_paraphrases"]:
-                        torch.cuda.empty_cache()
-                        paraphrase_strings.append(string)
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
-                    # if( "openai_usable_paraphrases_embeddings" not in data_entry.keys()):
-                    #     data_entry["openai_usable_paraphrases_embeddings"]=[]
-                    # data_entry["openai_usable_paraphrases_embeddings"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
+#             print("Accuracy:", (total_samples - fails) / total_samples if total_samples > 0 else 0)
+#             json.dump({"Accuracy": (total_samples - fails) / total_samples if total_samples > 0 else 0  }, jsonl_file_writer)
+#             jsonl_file_writer.write("\n")
                 
 
+# def gemma_embeddings_analysis_counterfact_lasttoken(file_path,model,tokenizer,file_save_path,device):
+#     # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+#     counter=1
 
-                    # Get main embedding
-                    edit_vec = data_dict["edit_tensor"]  # shape: [3072]
-
-                    # Stack vectors
-                    paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # shape: [N_p, 3072]
-                    locality_vecs = torch.stack(data_dict["locality_vectors"])        # shape: [N_l, 3072]
+#     # l=["encoder.block.6.layer.1.DenseReluDense.wo"]
+#     l=["model.layers.27"]
+#     with open(file_save_path, 'w') as jsonl_file_writer:
+#         with nethook.TraceDict(model, l) as ret:
+#             with torch.no_grad():
+#                 # for batch in tqdm(data_loader, desc="Processing batches", leave=False):
+#                 for i in tqdm(range(500), desc="Processing 500 steps"):
+#                     data_dict={}
+#                     data_entry = json.loads(linecache.getline(file_path, counter).strip())
+#                     # print(data_entry.keys())
+#                     torch.cuda.empty_cache()
+#                     # print(data_entry["edited_prompt"])
+#                     data_entry["vector_edited_prompt"]=[]
+#                     inputs=tokenizer(data_entry["edited_prompt"][0], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     data_dict["edit_tensor"]=[ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0]
                     
-                    edit_vec = F.normalize(edit_vec, dim=0)
-                    paraphrase_vecs = F.normalize(paraphrase_vecs, dim=1)
-                    locality_vecs = F.normalize(locality_vecs, dim=1)
-                    # 1. Distances from edit → each paraphrase
-                    para_sims = F.cosine_similarity(
-                        paraphrase_vecs, edit_vec.unsqueeze(0), dim=1
-                    )  # shape: [N_p], similarity scores
+#                     # print([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0].shape)
+                    
+#                     # data_entry["vector_edited_prompt"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+#                     torch.cuda.empty_cache()
+#                     # data_entry["vector_edited_prompt_paraphrases_processed"]=[]
+#                     data_dict["paraphrases_vectors"]=[]
+#                     paraphrase_strings=[]
+#                     inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
+#                     paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed"])
+#                     # data_entry["vector_edited_prompt_paraphrases_processed"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+                    
+#                     # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[]
+#                     torch.cuda.empty_cache()
+                    
+#                     inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed_testing"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+#                     data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
+#                     paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed_testing"])
 
-                    # 2. Distances from edit → each locality vector
-                    local_sims = F.cosine_similarity(
-                        locality_vecs, edit_vec.unsqueeze(0), dim=1
-                    )  # shape: [N_l], similarity scores
+#                     data_dict["locality_vectors"]=[]
+#                     locality_strings=[]
+#                     # data_entry["vectors_neighborhood_prompts_high_sim"]=[]
+#                     for string in data_entry["neighborhood_prompts_high_sim"]:
+#                         torch.cuda.empty_cache()
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
+#                         locality_strings.append(string)
+#                         # data_entry["vectors_neighborhood_prompts_high_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
 
-                    # # 3. Compare
-                    # max_para_sim = para_distances.max().item()  # highest similarity
-                    # max_local_sim = local_distances.max().item()
+#                     # data_entry["vectors_neighborhood_prompts_low_sim"]=[]
+                    
+#                     for string in data_entry["neighborhood_prompts_low_sim"]:
+#                         torch.cuda.empty_cache()
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
+#                         locality_strings.append(string)
+#                         # data_entry["vectors_neighborhood_prompts_low_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
 
-                    # print(f"Closest paraphrase sim: {max_para_sim:.4f}")
-                    # print(f"Closest locality sim:  {max_local_sim:.4f}")
-                    # counter+=1
-                        # json.dump(data_entry, jsonl_file_writer)
-                        # jsonl_file_writer.write('\n')
+#                     for string in data_entry["openai_usable_paraphrases"]:
+#                         torch.cuda.empty_cache()
+#                         paraphrase_strings.append(string)
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0][:, -1, :].view(-1) for layer_fc1_vals in ret][0])
+#                     # if( "openai_usable_paraphrases_embeddings" not in data_entry.keys()):
+#                     #     data_entry["openai_usable_paraphrases_embeddings"]=[]
+#                     # data_entry["openai_usable_paraphrases_embeddings"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
+                
 
-                    # Ensure everything is on the same device
-                    edit_vec = data_dict["edit_tensor"]  # shape: [3072]
-                    paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # [N_p, 3072]
-                    locality_vecs = torch.stack(data_dict["locality_vectors"])        # [N_l, 3072]
 
-                    edit_vec = edit_vec.to(paraphrase_vecs.device)
+#                     # Get main embedding
+#                     edit_vec = data_dict["edit_tensor"]  # shape: [3072]
 
-                    # Compute Euclidean distances
-                    para_dists = torch.norm(paraphrase_vecs - edit_vec.unsqueeze(0), dim=1)  # [N_p]
-                    local_dists = torch.norm(locality_vecs - edit_vec.unsqueeze(0), dim=1)   # [N_l]
+#                     # Stack vectors
+#                     paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # shape: [N_p, 3072]
+#                     locality_vecs = torch.stack(data_dict["locality_vectors"])        # shape: [N_l, 3072]
+                    
+#                     edit_vec = F.normalize(edit_vec, dim=0)
+#                     paraphrase_vecs = F.normalize(paraphrase_vecs, dim=1)
+#                     locality_vecs = F.normalize(locality_vecs, dim=1)
+#                     # 1. Distances from edit → each paraphrase
+#                     para_sims = F.cosine_similarity(
+#                         paraphrase_vecs, edit_vec.unsqueeze(0), dim=1
+#                     )  # shape: [N_p], similarity scores
 
-                    # Min distances
-                    min_para_dist = para_dists.min().item()
-                    min_local_dist = local_dists.min().item()
+#                     # 2. Distances from edit → each locality vector
+#                     local_sims = F.cosine_similarity(
+#                         locality_vecs, edit_vec.unsqueeze(0), dim=1
+#                     )  # shape: [N_l], similarity scores
 
-                    # Print for debug
-                    # print(f"Closest paraphrase distance: {min_para_dist:.4f}")
-                    # print(f"Closest locality distance:   {min_local_dist:.4f}")
-                    violating_pairs=[]
-                    for i, (local_dist,local_sim) in enumerate(zip(local_dists,local_sims)):
-                        for j, (para_dist, para_sim ) in enumerate(zip(para_dists,para_sims)):
-                            if local_dist < para_dist or local_sim > para_sim:
-                                # print("heelo")
-                                violating_pairs.append({"distance_failure": (local_dist < para_dist).item(),"similarity_failure": (local_sim > para_sim).item(),"distances_sims":{"local_dist":local_dist.item(),"para_dist":para_dist.item(),"local_sim":local_sim.item(),"para_sim":para_sim.item()},"edit":data_entry["edited_prompt"][0],"paraphrase":paraphrase_strings[j],"locality":locality_strings[i]})
+#                     # # 3. Compare
+#                     # max_para_sim = para_distances.max().item()  # highest similarity
+#                     # max_local_sim = local_distances.max().item()
+
+#                     # print(f"Closest paraphrase sim: {max_para_sim:.4f}")
+#                     # print(f"Closest locality sim:  {max_local_sim:.4f}")
+#                     # counter+=1
+#                         # json.dump(data_entry, jsonl_file_writer)
+#                         # jsonl_file_writer.write('\n')
+
+#                     # Ensure everything is on the same device
+#                     edit_vec = data_dict["edit_tensor"]  # shape: [3072]
+#                     paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # [N_p, 3072]
+#                     locality_vecs = torch.stack(data_dict["locality_vectors"])        # [N_l, 3072]
+
+#                     edit_vec = edit_vec.to(paraphrase_vecs.device)
+
+#                     # Compute Euclidean distances
+#                     para_dists = torch.norm(paraphrase_vecs - edit_vec.unsqueeze(0), dim=1)  # [N_p]
+#                     local_dists = torch.norm(locality_vecs - edit_vec.unsqueeze(0), dim=1)   # [N_l]
+
+#                     # Min distances
+#                     min_para_dist = para_dists.min().item()
+#                     min_local_dist = local_dists.min().item()
+
+#                     # Print for debug
+#                     # print(f"Closest paraphrase distance: {min_para_dist:.4f}")
+#                     # print(f"Closest locality distance:   {min_local_dist:.4f}")
+#                     violating_pairs=[]
+#                     for i, (local_dist,local_sim) in enumerate(zip(local_dists,local_sims)):
+#                         for j, (para_dist, para_sim ) in enumerate(zip(para_dists,para_sims)):
+#                             if local_dist < para_dist or local_sim > para_sim:
+#                                 # print("heelo")
+#                                 violating_pairs.append({"distance_failure": (local_dist < para_dist).item(),"similarity_failure": (local_sim > para_sim).item(),"distances_sims":{"local_dist":local_dist.item(),"para_dist":para_dist.item(),"local_sim":local_sim.item(),"para_sim":para_sim.item()},"edit":data_entry["edited_prompt"][0],"paraphrase":paraphrase_strings[j],"locality":locality_strings[i]})
                     
                     
-                    for entry in violating_pairs:
-                        # print(entry)
-                        json.dump(entry, jsonl_file_writer)
-                        jsonl_file_writer.write("\n")
-                    # if violating_pairs:       
-                    #     print(violating_pairs)     
-                    # Check comparison
-                    # if min_local_dist < min_para_dist or max_local_sim > max_para_sim:
-                    #     print("⚠️ A locality vector is closer to the edit than any paraphrase (Euclidean).",data_entry["edited_prompt"][0],paraphrase_strings[j],locality_strings[i])
-                    counter+=1
-                # break
+#                     for entry in violating_pairs:
+#                         # print(entry)
+#                         json.dump(entry, jsonl_file_writer)
+#                         jsonl_file_writer.write("\n")
+#                     # if violating_pairs:       
+#                     #     print(violating_pairs)     
+#                     # Check comparison
+#                     # if min_local_dist < min_para_dist or max_local_sim > max_para_sim:
+#                     #     print("⚠️ A locality vector is closer to the edit than any paraphrase (Euclidean).",data_entry["edited_prompt"][0],paraphrase_strings[j],locality_strings[i])
+#                     counter+=1
+#                 # break
 
 
-def gemma_embeddings_analysis_counterfact_average(file_path,model,tokenizer,file_save_path,device):
-    # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
-    counter=1
+# def gemma_embeddings_analysis_counterfact_average(file_path,model,tokenizer,file_save_path,device):
+#     # data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+#     counter=1
 
-    # l=["encoder.block.6.layer.1.DenseReluDense.wo"]
-    l=["model.layers.27"]
-    with open(file_save_path, 'w') as jsonl_file_writer:
-        with nethook.TraceDict(model, l) as ret:
-            with torch.no_grad():
-                # for batch in tqdm(data_loader, desc="Processing batches", leave=False):
-                for i in tqdm(range(500), desc="Processing 500 steps"):
-                    data_dict={}
-                    data_entry = json.loads(linecache.getline(file_path, counter).strip())
-                    # print(data_entry.keys())
-                    torch.cuda.empty_cache()
-                    # print(data_entry["edited_prompt"])
-                    data_entry["vector_edited_prompt"]=[]
-                    inputs=tokenizer(data_entry["edited_prompt"][0], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    data_dict["edit_tensor"]=[ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0]
+#     # l=["encoder.block.6.layer.1.DenseReluDense.wo"]
+#     l=["model.layers.27"]
+#     with open(file_save_path, 'w') as jsonl_file_writer:
+#         with nethook.TraceDict(model, l) as ret:
+#             with torch.no_grad():
+#                 # for batch in tqdm(data_loader, desc="Processing batches", leave=False):
+#                 for i in tqdm(range(500), desc="Processing 500 steps"):
+#                     data_dict={}
+#                     data_entry = json.loads(linecache.getline(file_path, counter).strip())
+#                     # print(data_entry.keys())
+#                     torch.cuda.empty_cache()
+#                     # print(data_entry["edited_prompt"])
+#                     data_entry["vector_edited_prompt"]=[]
+#                     inputs=tokenizer(data_entry["edited_prompt"][0], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     data_dict["edit_tensor"]=[ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0]
                    
-                    # print([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0].shape)
+#                     # print([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0].shape)
                     
-                    # data_entry["vector_edited_prompt"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
-                    torch.cuda.empty_cache()
-                    # data_entry["vector_edited_prompt_paraphrases_processed"]=[]
-                    data_dict["paraphrases_vectors"]=[]
-                    paraphrase_strings=[]
-                    inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
-                    paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed"])
-                    # data_entry["vector_edited_prompt_paraphrases_processed"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+#                     # data_entry["vector_edited_prompt"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+#                     torch.cuda.empty_cache()
+#                     # data_entry["vector_edited_prompt_paraphrases_processed"]=[]
+#                     data_dict["paraphrases_vectors"]=[]
+#                     paraphrase_strings=[]
+#                     inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
+#                     paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed"])
+#                     # data_entry["vector_edited_prompt_paraphrases_processed"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
                     
-                    # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[]
-                    torch.cuda.empty_cache()
+#                     # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[]
+#                     torch.cuda.empty_cache()
                     
-                    inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed_testing"], return_tensors="pt")["input_ids"].to(device)    
-                    outputs = model(inputs, output_hidden_states=True)
-                    # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
-                    data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
-                    paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed_testing"])
+#                     inputs=tokenizer(data_entry["edited_prompt_paraphrases_processed_testing"], return_tensors="pt")["input_ids"].to(device)    
+#                     outputs = model(inputs, output_hidden_states=True)
+#                     # data_entry["vector_edited_prompt_paraphrases_processed_testing"]=[ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0]
+#                     data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
+#                     paraphrase_strings.append(data_entry["edited_prompt_paraphrases_processed_testing"])
 
-                    data_dict["locality_vectors"]=[]
-                    locality_strings=[]
-                    # data_entry["vectors_neighborhood_prompts_high_sim"]=[]
-                    for string in data_entry["neighborhood_prompts_high_sim"]:
-                        torch.cuda.empty_cache()
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
-                        locality_strings.append(string)
-                        # data_entry["vectors_neighborhood_prompts_high_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
+#                     data_dict["locality_vectors"]=[]
+#                     locality_strings=[]
+#                     # data_entry["vectors_neighborhood_prompts_high_sim"]=[]
+#                     for string in data_entry["neighborhood_prompts_high_sim"]:
+#                         torch.cuda.empty_cache()
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
+#                         locality_strings.append(string)
+#                         # data_entry["vectors_neighborhood_prompts_high_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
 
-                    # data_entry["vectors_neighborhood_prompts_low_sim"]=[]
+#                     # data_entry["vectors_neighborhood_prompts_low_sim"]=[]
                     
-                    for string in data_entry["neighborhood_prompts_low_sim"]:
-                        torch.cuda.empty_cache()
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
-                        locality_strings.append(string)
-                        # data_entry["vectors_neighborhood_prompts_low_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
+#                     for string in data_entry["neighborhood_prompts_low_sim"]:
+#                         torch.cuda.empty_cache()
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)    
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["locality_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
+#                         locality_strings.append(string)
+#                         # data_entry["vectors_neighborhood_prompts_low_sim"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
 
-                    for string in data_entry["openai_usable_paraphrases"]:
-                        torch.cuda.empty_cache()
-                        paraphrase_strings.append(string)
-                        inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)
-                        outputs = model(inputs, output_hidden_states=True)
-                        data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
-                    # if( "openai_usable_paraphrases_embeddings" not in data_entry.keys()):
-                    #     data_entry["openai_usable_paraphrases_embeddings"]=[]
-                    # data_entry["openai_usable_paraphrases_embeddings"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
+#                     for string in data_entry["openai_usable_paraphrases"]:
+#                         torch.cuda.empty_cache()
+#                         paraphrase_strings.append(string)
+#                         inputs=tokenizer(string, return_tensors="pt")["input_ids"].to(device)
+#                         outputs = model(inputs, output_hidden_states=True)
+#                         data_dict["paraphrases_vectors"].append([ret[layer_fc1_vals].output[0].mean(dim=1).view(-1) for layer_fc1_vals in ret][0])
+#                     # if( "openai_usable_paraphrases_embeddings" not in data_entry.keys()):
+#                     #     data_entry["openai_usable_paraphrases_embeddings"]=[]
+#                     # data_entry["openai_usable_paraphrases_embeddings"].append([ret[layer_fc1_vals].output.mean(dim=1).detach().cpu().numpy().tolist() for layer_fc1_vals in ret][0])
             
 
-                    # Get main embedding
-                    edit_vec = data_dict["edit_tensor"]  # shape: [3072]
+#                     # Get main embedding
+#                     edit_vec = data_dict["edit_tensor"]  # shape: [3072]
 
-                    # Stack vectors
-                    paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # shape: [N_p, 3072]
-                    locality_vecs = torch.stack(data_dict["locality_vectors"])        # shape: [N_l, 3072]
+#                     # Stack vectors
+#                     paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # shape: [N_p, 3072]
+#                     locality_vecs = torch.stack(data_dict["locality_vectors"])        # shape: [N_l, 3072]
                     
-                    edit_vec = F.normalize(edit_vec, dim=0)
-                    paraphrase_vecs = F.normalize(paraphrase_vecs, dim=1)
-                    locality_vecs = F.normalize(locality_vecs, dim=1)
-                    # 1. Distances from edit → each paraphrase
-                    para_sims = F.cosine_similarity(
-                        paraphrase_vecs, edit_vec.unsqueeze(0), dim=1
-                    )  # shape: [N_p], similarity scores
+#                     edit_vec = F.normalize(edit_vec, dim=0)
+#                     paraphrase_vecs = F.normalize(paraphrase_vecs, dim=1)
+#                     locality_vecs = F.normalize(locality_vecs, dim=1)
+#                     # 1. Distances from edit → each paraphrase
+#                     para_sims = F.cosine_similarity(
+#                         paraphrase_vecs, edit_vec.unsqueeze(0), dim=1
+#                     )  # shape: [N_p], similarity scores
 
-                    # 2. Distances from edit → each locality vector
-                    local_sims = F.cosine_similarity(
-                        locality_vecs, edit_vec.unsqueeze(0), dim=1
-                    )  # shape: [N_l], similarity scores
+#                     # 2. Distances from edit → each locality vector
+#                     local_sims = F.cosine_similarity(
+#                         locality_vecs, edit_vec.unsqueeze(0), dim=1
+#                     )  # shape: [N_l], similarity scores
 
-                    # # 3. Compare
-                    # max_para_sim = para_distances.max().item()  # highest similarity
-                    # max_local_sim = local_distances.max().item()
+#                     # # 3. Compare
+#                     # max_para_sim = para_distances.max().item()  # highest similarity
+#                     # max_local_sim = local_distances.max().item()
 
-                    # print(f"Closest paraphrase sim: {max_para_sim:.4f}")
-                    # print(f"Closest locality sim:  {max_local_sim:.4f}")
-                    # counter+=1
-                        # json.dump(data_entry, jsonl_file_writer)
-                        # jsonl_file_writer.write('\n')
+#                     # print(f"Closest paraphrase sim: {max_para_sim:.4f}")
+#                     # print(f"Closest locality sim:  {max_local_sim:.4f}")
+#                     # counter+=1
+#                         # json.dump(data_entry, jsonl_file_writer)
+#                         # jsonl_file_writer.write('\n')
 
-                    # Ensure everything is on the same device
-                    edit_vec = data_dict["edit_tensor"]  # shape: [3072]
-                    paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # [N_p, 3072]
-                    locality_vecs = torch.stack(data_dict["locality_vectors"])        # [N_l, 3072]
+#                     # Ensure everything is on the same device
+#                     edit_vec = data_dict["edit_tensor"]  # shape: [3072]
+#                     paraphrase_vecs = torch.stack(data_dict["paraphrases_vectors"])  # [N_p, 3072]
+#                     locality_vecs = torch.stack(data_dict["locality_vectors"])        # [N_l, 3072]
 
-                    edit_vec = edit_vec.to(paraphrase_vecs.device)
+#                     edit_vec = edit_vec.to(paraphrase_vecs.device)
 
-                    # Compute Euclidean distances
-                    para_dists = torch.norm(paraphrase_vecs - edit_vec.unsqueeze(0), dim=1)  # [N_p]
-                    local_dists = torch.norm(locality_vecs - edit_vec.unsqueeze(0), dim=1)   # [N_l]
+#                     # Compute Euclidean distances
+#                     para_dists = torch.norm(paraphrase_vecs - edit_vec.unsqueeze(0), dim=1)  # [N_p]
+#                     local_dists = torch.norm(locality_vecs - edit_vec.unsqueeze(0), dim=1)   # [N_l]
 
-                    # Min distances
-                    min_para_dist = para_dists.min().item()
-                    min_local_dist = local_dists.min().item()
+#                     # Min distances
+#                     min_para_dist = para_dists.min().item()
+#                     min_local_dist = local_dists.min().item()
 
-                    # Print for debug
-                    # print(f"Closest paraphrase distance: {min_para_dist:.4f}")
-                    # print(f"Closest locality distance:   {min_local_dist:.4f}")
-                    violating_pairs=[]
-                    for i, (local_dist,local_sim) in enumerate(zip(local_dists,local_sims)):
-                        for j, (para_dist, para_sim ) in enumerate(zip(para_dists,para_sims)):
-                            if local_dist < para_dist or local_sim > para_sim:
-                                # print("heelo")
-                                violating_pairs.append({"distance_failure": (local_dist < para_dist).item(),"similarity_failure": (local_sim > para_sim).item(),"distances_sims":{"local_dist":local_dist.item(),"para_dist":para_dist.item(),"local_sim":local_sim.item(),"para_sim":para_sim.item()},"edit":data_entry["edited_prompt"][0],"paraphrase":paraphrase_strings[j],"locality":locality_strings[i]})
+#                     # Print for debug
+#                     # print(f"Closest paraphrase distance: {min_para_dist:.4f}")
+#                     # print(f"Closest locality distance:   {min_local_dist:.4f}")
+#                     violating_pairs=[]
+#                     for i, (local_dist,local_sim) in enumerate(zip(local_dists,local_sims)):
+#                         for j, (para_dist, para_sim ) in enumerate(zip(para_dists,para_sims)):
+#                             if local_dist < para_dist or local_sim > para_sim:
+#                                 # print("heelo")
+#                                 violating_pairs.append({"distance_failure": (local_dist < para_dist).item(),"similarity_failure": (local_sim > para_sim).item(),"distances_sims":{"local_dist":local_dist.item(),"para_dist":para_dist.item(),"local_sim":local_sim.item(),"para_sim":para_sim.item()},"edit":data_entry["edited_prompt"][0],"paraphrase":paraphrase_strings[j],"locality":locality_strings[i]})
                     
                     
-                    for entry in violating_pairs:
-                        json.dump(entry, jsonl_file_writer)
-                        jsonl_file_writer.write("\n")
-                    # if violating_pairs:       
-                    #     print(violating_pairs)     
-                    # Check comparison
-                    # if min_local_dist < min_para_dist or max_local_sim > max_para_sim:
-                    #     print("⚠️ A locality vector is closer to the edit than any paraphrase (Euclidean).",data_entry["edited_prompt"][0],paraphrase_strings[j],locality_strings[i])
-                    counter+=1
-                # break
+#                     for entry in violating_pairs:
+#                         json.dump(entry, jsonl_file_writer)
+#                         jsonl_file_writer.write("\n")
+#                     # if violating_pairs:       
+#                     #     print(violating_pairs)     
+#                     # Check comparison
+#                     # if min_local_dist < min_para_dist or max_local_sim > max_para_sim:
+#                     #     print("⚠️ A locality vector is closer to the edit than any paraphrase (Euclidean).",data_entry["edited_prompt"][0],paraphrase_strings[j],locality_strings[i])
+#                     counter+=1
+#                 # break
+

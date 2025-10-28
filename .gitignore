@@ -13,7 +13,7 @@ __pycache__/
 
 #Files
 counterfact_easyedit_gemma_lexical_bias_violations_average.jsonl
-
+access_token.py
 #folders
 common_pile_analysis/
 figures_counterfact/
@@ -30,3 +30,5 @@ LinearProbe/
 Network_Learning/
 figures_entropy/
 counterfact_analysis/
+figures_scpp/
+dime_figures/

@@ -121,11 +121,15 @@ paths=[
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/Llama-3.2-1B-Instruct_lasttoken/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-4b-it_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-4b-it_lasttoken/",
-       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-it_averaging/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-4b-pt_averaging/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-4b-pt_lasttoken/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-it_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-it_lasttoken/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-it_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-it_lasttoken/",
-       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-pt_averaging/",
+       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_averaging/",
+       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_lasttoken/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-pt_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-pt_lasttoken/"
        ]
 for path in paths:
@@ -134,7 +138,7 @@ for path in paths:
     print(out_file_name)
     plot_layer_metrics(path,
                        "./figures_counterfact/",
-                       metric_keys=("Failure Rate","FailRate_low_Q1","FailRate_high_Q4","intrasims_dict"),
+                       metric_keys=("Failure Rate","FailRate_low_Q1","FailRate_high_Q4"),
                        out_name=out_file_name,
                        title_prefix="Counterfact")
 # plot_layer_metrics("/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/Llama-3.2-3B-Instruct_lasttoken",

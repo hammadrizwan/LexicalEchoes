@@ -19,7 +19,7 @@ from quoraPD_analysis.distance_analysis import analyze_and_save_distances
 import argparse
 from model_files.qwen import qwen_quora_paws
 
-
+from get_token import *
 #----------------------------------------------------------------------------
 # Section: File paths and argument parsing
 #----------------------------------------------------------------------------
@@ -29,8 +29,8 @@ LAYER_MAPPING_DICT={"gemma-3-1b-pt":["model.layers.25"],"gemma-3-4b-pt":["model.
                     "Llama-3.2-1B":["model.layers.14"],"Llama-3.2-1B-Instruct":["model.layers.14"],"Llama-3.2-3B":["model.layers.27"],"Llama-3.2-3B-Instruct":["model.layers.27"],
 
                     }
+ACCESS_TOKEN=get_token()
 
-ACCESS_TOKEN="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"
 
 def get_args():
     parser = argparse.ArgumentParser(description="Lexical Bias Benchmarking PAWS")

@@ -12,19 +12,33 @@ import nltk
 from nltk.tokenize import word_tokenize
 from collections import Counter
 from model_files.qwen import qwen_counterfact_scpp
-from model_files.gemma_functions import gemma_pt_counterfact_scpp,gemma_it_counterfact_scpp
+from model_files.gemma_functions import gemma_pt_counterfact_scpp,gemma_it_counterfact_scpp,gemma_counterfact_dime
 from model_files.llama_functions import llama_it_counterfact_scpp,llama_pt_counterfact_scpp
 from model_files.helper_functions import run_all,_tokens_no_entities,split_by_median
 from model_files.e5_functions import e5_counterfact_scpp
 from model_files.kalm_functions import kalm_counterfact_scpp
 from model_files.promptriever import promptretriever_counterfact_scpp
-LAYER_MAPPING_DICT={"gemma-3-1b-pt":["model.layers.25"],"gemma-3-4b-pt":["model.language_model.layers.33"],"gemma-3-12b-pt":["model.language_model.layers.47"],
-                    "gemma-3-1b-it":["model.layers.25"],"gemma-3-4b-it":["model.language_model.layers.33"],"gemma-3-12b-it":["model.language_model.layers.47"],
-                    "Llama-3.2-1B":["model.layers.14"],"Llama-3.2-1B-Instruct":["model.layers.14"],"Llama-3.2-3B":["model.layers.27"],"Llama-3.2-3B-Instruct":["model.layers.27"],
-
+from get_token import *
+LAYER_TEMPLATE_DICT={"gemma-3-1b-pt":["model.layers.{}"],"gemma-3-4b-pt":["model.language_model.layers.{}"],"gemma-3-12b-pt":["model.language_model.layers.{}"],
+                    "gemma-3-1b-it":["model.layers.{}"],"gemma-3-4b-it":["model.language_model.layers.{}"],"gemma-3-12b-it":["model.language_model.layers.{}"],
+                    "Llama-3.2-1B":["model.layers.{}"],"Llama-3.2-1B-Instruct":["model.layers.{}"],"Llama-3.2-3B":["model.layers.{}"],"Llama-3.2-3B-Instruct":["model.layers.{}"],
+                    "qwen":["layers.{}"]
                     }
 
-ACCESS_TOKEN="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"
+LAYER_MAPPING_DICT={"Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "qwen":[33,34,35]
+                    }
+
+ACCESS_TOKEN=get_token()
 
 LOAD_PATH="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/scpp/data/"
 
@@ -254,143 +268,7 @@ def generate_response(prompt, tokenizer, model, max_new_tokens=200):
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 
-# def gemma():
-#     model_name = "google/gemma-7b-it"
-#     # GemmaForCausalLM
-#     #     └── model (GemmaModel)
-#     #         └── embed_tokens
-#     #         └── layers (ModuleList)
-#     #             └── [i] (GemmaDecoderLayer)
-#     #                 └── self_attn (GemmaAttention)
-#     #                     └── q_proj / k_proj / v_proj / o_proj
-#     #                 └── mlp (GemmaMLP)
-#     #                     └── gate_proj / up_proj / down_proj / act_fn
-#     #                 └── input_layernorm
-#     #                 └── post_attention_layernorm
-#     #         └── norm
-#     #         └── rotary_emb
-#     #     └── lm_head
-#     acess_token_gemma= "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"
-#     # prompt = "Explain the theory of relativity in simple terms."
-#     print("Loading model...")
-#     tokenizer, model = load_model(model_name,acess_token_gemma)
-#     print("Model loaded.",model)
-#     # print("Generating response...")
-#     # response = generate_response(prompt, tokenizer, model)
-#     # print("Run Embeddigs Analysis Counterfact...")
-#     file_path_counterfact="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/Counterfact_OpenAI.jsonl"
-#     # file_save_path="./counterfact_gemma_lexical_bias_violations_lasttoken.jsonl"
-#     # gemma_embeddings_analysis_counterfact_lasttoken(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")
-#     file_save_path="./counterfact_gemma_lexical_bias_violations_average.jsonl"
-#     gemma_embeddings_analysis_counterfact_average(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")  
-#     # print("\n=== Model Output ===")
-#     # print(response)
-# def llama():
-#     model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-#     # LlamaForCausalLM
-#         # └── model (LlamaModel)
-#         #     ├── embed_tokens (Embedding)
-#         #     ├── layers (ModuleList)
-#         #     │   └── [i] (LlamaDecoderLayer)
-#         #     │       ├── self_attn (LlamaAttention)
-#         #     │       │   ├── q_proj (Linear)
-#         #     │       │   ├── k_proj (Linear)
-#         #     │       │   ├── v_proj (Linear)
-#         #     │       │   └── o_proj (Linear)
-#         #     │       ├── mlp (LlamaMLP)
-#         #     │       │   ├── gate_proj (Linear)
-#         #     │       │   ├── up_proj (Linear)
-#         #     │       │   ├── down_proj (Linear)
-#         #     │       │   └── act_fn (SiLU)
-#         #     │       ├── input_layernorm (LlamaRMSNorm)
-#         #     │       └── post_attention_layernorm (LlamaRMSNorm)
-#         #     ├── norm (LlamaRMSNorm)
-#         #     └── rotary_emb (LlamaRotaryEmbedding)
-#         # └── lm_head (Linear)
-
-#     acess_token_gemma= "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"
-#     # prompt = "Explain the theory of relativity in simple terms."
-#     print("Loading model...")
-#     tokenizer, model = load_model(model_name,acess_token_gemma)
-#     # print("Model loaded.",model)
-#     # print("Generating response...")
-#     # response = generate_response(prompt, tokenizer, model)
-#     # print("Run Embeddigs Analysis Counterfact...")
-#     file_path_counterfact="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/Counterfact_OpenAI.jsonl"
-#     file_save_path="./counterfact_llama_lexical_bias_violations_lasttoken.jsonl"
-#     llama_embeddings_analysis_counterfact_lasttoken(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")
-#     file_save_path="./counterfact_llama_lexical_bias_violations_average.jsonl"
-#     llama_embeddings_analysis_counterfact_average(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")  
-#     # print("\n=== Model Output ===")
-#     # print(response)
-# def e5(device,sub_file="replace_rel"):
-#     tokenizer = AutoTokenizer.from_pretrained('intfloat/multilingual-e5-large-instruct')
-#     model = AutoModel.from_pretrained('intfloat/multilingual-e5-large-instruct').to(device)
-#     print(device)
-#     # sub_file="replace_att"
-#     file_path_scpp="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/scpp/data/"+sub_file+".json"
-#     file_save_path="./scpp_analysis/scpp_e5_lexical_bias_direct_"+sub_file+".jsonl"
-#     e5_test_scpp(file_path=file_path_scpp,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device=device)
-#     del model           # Remove the Python object reference
-#     del tokenizer
-#     gc.collect()        # Run garbage collection to clean up CPU memory
-
-#     # Free GPU memory if model was on CUDA
-#     torch.cuda.empty_cache()
-# def kalm(device,sub_file="replace_rel"):
-#     model = SentenceTransformer('HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5').to(device)
-#     model.max_seq_length = 512
-#     print(device)
-#     # sub_file="replace_rel"
-#     file_path_scpp="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/scpp/data/"+sub_file+".json"
-#     file_save_path="./scpp_analysis/scpp_kalm_lexical_bias_direct_"+sub_file+".jsonl"
-#     kalm_test_scpp(file_path=file_path_scpp,model=model,file_save_path=file_save_path,device=device)
-#     del model           # Remove the Python object reference
-#     gc.collect()        # Run garbage collection to clean up CPU memory
-
-#     # Free GPU memory if model was on CUDA
-#     torch.cuda.empty_cache()
-
-# def qwen(device,sub_file="replace_rel"):
-#     model = SentenceTransformer("Qwen/Qwen3-Embedding-8B").to(device)
-#     # queries = [
-#     # "Angola is located in",
-#     # ]
-#     # documents = [
-#     #     "Mozambique is in",
-#     #     "Angola is a part of the continent of",
-#     # ]
-#     # sub_file="swap_att"
-#     file_path_scpp="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/scpp/data/"+sub_file+".json"
-#     file_save_path="./scpp_analysis/scpp_qwen_lexical_bias_direct_"+sub_file+".jsonl"
-#     qwen_test_scpp(file_path=file_path_scpp,model=model,file_save_path=file_save_path,device="cuda:0")
-        
-#     del model           # Remove the Python object reference
-#     gc.collect()        # Run garbage collection to clean up CPU memory
-
-#     # Free GPU memory if model was on CUDA
-#     torch.cuda.empty_cache()
-#     # query_embeddings = model.encode(queries)
-#     # document_embeddings = model.encode(documents)
-#     # print("Query Embeddings:", query_embeddings)
-#     # print("Query Embeddings:", query_embeddings[0].shape)
-#     # Compute the (cosine) similarity between the query and document embeddings
-#     # similarity = model.similarity(query_embeddings, document_embeddings)
-#     # print(similarity)
 def free_all_torch():
-    # Clear Python variables (global + local)
-    # globs = list(globals().keys())
-    # for g in globs:
-    #     if g not in ["__name__", "__doc__", "__package__", "__loader__", "__spec__",
-    #                  "__builtins__", "sys", "gc", "torch", "free_all_torch"]:
-    #         del globals()[g]
-
-    # locs = list(locals().keys())
-    # for l in locs:
-    #     if l not in ["sys", "gc", "torch", "free_all_torch"]:
-    #         del locals()[l]
-
-    # Garbage collect
     gc.collect()
 
     # Clear CUDA memory (if GPU available)
@@ -409,14 +287,15 @@ if __name__ == "__main__":
     
 
     if(args.data_type=="auto"):
-        file_list=["replace_att"]#,"replace_obj","swap_att","swap_obj","replace_rel"]
+        file_list=["replace_att","replace_obj","swap_att","swap_obj","replace_rel"]
     else:
         file_list=[args.data_type]
 
     base_path=args.save_path+args.model_type+"/"
     if not os.path.exists(base_path):
         os.makedirs(base_path)
-    for file in file_list:    
+    for file in file_list:
+        args.data_type=file  
         print("Running for ", file)
         args.save_path=base_path
         
@@ -434,19 +313,52 @@ if __name__ == "__main__":
             print("note here")
             if not os.path.exists(args.save_path):
                 os.makedirs(args.save_path)
-            llama_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
+            formated_layers=[]
+            for layer in LAYER_MAPPING_DICT[args.model_type]:
+                layer_string=LAYER_TEMPLATE_DICT[args.model_type][0].format(layer)
+                print(layer_string)
+                layer_file_path=args.save_path+str(layer_string)+"/"
+                if not os.path.exists(layer_file_path):
+                    os.makedirs(layer_file_path)
+                formated_layers.append(layer_string)
+            llama_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         elif("Llama" in args.model_type and "Instruct" not in args.model_type):
             if not os.path.exists(args.save_path):
                 os.makedirs(args.save_path)
-            llama_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
+            formated_layers=[]
+            for layer in LAYER_MAPPING_DICT[args.model_type]:
+                layer_string=LAYER_TEMPLATE_DICT[args.model_type][0].format(layer)
+                print(layer_string)
+                layer_file_path=args.save_path+str(layer_string)+"/"
+                if not os.path.exists(layer_file_path):
+                    os.makedirs(layer_file_path)
+                formated_layers.append(layer_string)
+            llama_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         elif("gemma" in args.model_type and "pt" in args.model_type):
             if not os.path.exists(args.save_path):
                 os.makedirs(args.save_path)
-            gemma_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
+            formated_layers=[]
+            for layer in LAYER_MAPPING_DICT[args.model_type]:
+                layer_string=LAYER_TEMPLATE_DICT[args.model_type][0].format(layer)
+                print(layer_string)
+                layer_file_path=args.save_path+str(layer_string)+"/"
+                if not os.path.exists(layer_file_path):
+                    os.makedirs(layer_file_path)
+                formated_layers.append(layer_string)
+            # gemma_counterfact_dime(data_loader,args,ACCESS_TOKEN,formated_layers,device)
+            gemma_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         elif("gemma" in args.model_type and "it" in args.model_type):
             if not os.path.exists(args.save_path):
                 os.makedirs(args.save_path)
-            gemma_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
+            formated_layers=[]
+            for layer in LAYER_MAPPING_DICT[args.model_type]:
+                layer_string=LAYER_TEMPLATE_DICT[args.model_type][0].format(layer)
+                print(layer_string)
+                layer_file_path=args.save_path+str(layer_string)+"/"
+                if not os.path.exists(layer_file_path):
+                    os.makedirs(layer_file_path)
+                formated_layers.append(layer_string)
+            gemma_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         elif(args.model_type=="qwen"):
             if not os.path.exists(args.save_path):
                 os.makedirs(args.save_path)

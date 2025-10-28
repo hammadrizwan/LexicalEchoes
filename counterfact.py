@@ -21,7 +21,7 @@ from nltk.tokenize import word_tokenize
 from collections import Counter
 from model_files.helper_functions import run_all,_tokens_no_entities,split_by_median
 from model_files.qwen import qwen_counterfact_scpp
-from model_files.gemma_functions import gemma_pt_counterfact_scpp,gemma_it_counterfact_scpp
+from model_files.gemma_functions import gemma_pt_counterfact_scpp,gemma_it_counterfact_scpp,gemma_counterfact_dime
 from model_files.llama_functions import llama_it_counterfact_scpp,llama_pt_counterfact_scpp
 from model_files.e5_functions import e5_counterfact_scpp
 from model_files.kalm_functions import kalm_counterfact_scpp
@@ -29,7 +29,7 @@ from model_files.promptriever import promptretriever_counterfact_scpp
 import statistics
 # from llama_functions import llama_embeddings_analysis_counterfact_average,llama_embeddings_analysis_counterfact_lasttoken
 # from model_files.gemma_functions import gemma_test_direct_counterfact_easyedit
-
+from get_token import *
 
 LAYER_TEMPLATE_DICT={"gemma-3-1b-pt":["model.layers.{}"],"gemma-3-4b-pt":["model.language_model.layers.{}"],"gemma-3-12b-pt":["model.language_model.layers.{}"],
                     "gemma-3-1b-it":["model.layers.{}"],"gemma-3-4b-it":["model.language_model.layers.{}"],"gemma-3-12b-it":["model.language_model.layers.{}"],
@@ -51,7 +51,7 @@ LAYER_MAPPING_DICT={"Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
                     }
                     
 
-ACCESS_TOKEN="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"
+ACCESS_TOKEN=get_token()
 
 
 #----------------------------------------------------------------------------
@@ -163,7 +163,7 @@ class CounterFactDatasetPenme(Dataset):
         score_jaccard_list=[]
         score_containment_list=[]
         score_overlap_list=[]
-        for row in dataset[:12]:
+        for row in dataset:
             anchor=row["edited_prompt"][0]
             distractor_list=[]
             distractor_list.extend(row["neighborhood_prompts_high_sim"])
@@ -449,7 +449,7 @@ def generate_response(prompt, tokenizer, model, max_new_tokens=200):
 #     #         └── norm
 #     #         └── rotary_emb
 #     #     └── lm_head
-#     acess_token_gemma= "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"
+
 #     # prompt = "Explain the theory of relativity in simple terms."
 #     print("Loading model...")
 #     tokenizer, model = load_model(model_name,acess_token_gemma)
@@ -573,7 +573,7 @@ if __name__ == "__main__":
             if not os.path.exists(layer_file_path):
                 os.makedirs(layer_file_path)
             formated_layers.append(layer_string)
-
+        # gemma_counterfact_dime(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         gemma_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         # gemma_pt_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
     elif("gemma" in args.model_type and "it" in args.model_type):

@@ -564,7 +564,7 @@ def llama_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
         tokenizer.pad_token = tokenizer.eos_token
     model.eval()
     # Example: access specific fields
-    
+    print(model)
     all_fail_flags_by_layer = defaultdict(list)
     all_viols_by_layer = defaultdict(list)
     LO_anchor_paraphrase_list_by_layer = defaultdict(list)
@@ -592,6 +592,7 @@ def llama_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
 
     percentage_selection=0.30
      # for scatter plot
+    print(layers)
     l = layers
     
     with nethook.TraceDict(model, l) as ret:
