@@ -19,6 +19,7 @@ from model_files.e5_functions import e5_counterfact_scpp
 from model_files.kalm_functions import kalm_counterfact_scpp
 from model_files.promptriever import promptretriever_counterfact_scpp
 from get_token import *
+
 LAYER_TEMPLATE_DICT={"gemma-3-1b-pt":["model.layers.{}"],"gemma-3-4b-pt":["model.language_model.layers.{}"],"gemma-3-12b-pt":["model.language_model.layers.{}"],
                     "gemma-3-1b-it":["model.layers.{}"],"gemma-3-4b-it":["model.language_model.layers.{}"],"gemma-3-12b-it":["model.language_model.layers.{}"],
                     "Llama-3.2-1B":["model.layers.{}"],"Llama-3.2-1B-Instruct":["model.layers.{}"],"Llama-3.2-3B":["model.layers.{}"],"Llama-3.2-3B-Instruct":["model.layers.{}"],
