@@ -1,506 +1,26 @@
 
 import torch, json, linecache, os
 dir_path = os.path.dirname(os.path.abspath(__file__))
-import nethook
 from tqdm import tqdm
 import torch.nn.functional as F
-import pandas as pd
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from visualization_quora_paws import analyze_and_save_distances
 import numpy as np
 from scipy.stats import spearmanr
-from sklearn.metrics import roc_auc_score
-from helper_functions import apply_whitening_batch,bootstrap_ci_spearman,bootstrap_ci_los_q1q4,_jaccard_overlap_pct,_counts
+from helper_functions import process_and_write ,_jaccard_overlap_pct,_counts#, apply_whitening_batch,bootstrap_ci_spearman,bootstrap_ci_los_q1q4
 from scipy.stats import spearmanr
 import metric_functions as mf
 import matplotlib.pyplot as plt
-import numpy as np
-import sys
+# import numpy as np
+import sys, os, json
 sys.path.append('/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/layer_by_layer/experiments/')
-import repitl.difference_of_entropies as dent
-_spearman = lambda x, y: spearmanr(x, y, nan_policy="omit")
 from collections import defaultdict
-def load_model(model_name="gemma",access_token=None,device="auto"):
-    model_name = "google/" + model_name
-    tokenizer = AutoTokenizer.from_pretrained(model_name,token=access_token)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.bfloat16,  # Use float16 if needed
-        device_map=device,
-        token=access_token,  # Use access token if required
-    )
-    model.eval()
-    return tokenizer, model
-
-#----------------------------------------------------------------------------
-# Section: Gemma PT Counterfact
-#----------------------------------------------------------------------------
-#region Gemma PT Counterfact
-
-def build_batched_pt_inputs(tokenizer, texts, device="auto"):
-    """
-    Build a batch of prompts for Gemma-PT (base model) using plain tokenization.
-    `texts` is a list[str]. If you were lowercasing upstream for IT, keep it for parity.
-    Returns: dict with input_ids, attention_mask on device.
-    """
-    enc = tokenizer(
-        [t.lower() for t in texts],   # keep/lift if you *don’t* want lowercase
-        padding=True,                 # important for batching
-        truncation=True,
-        return_tensors="pt"
-    )
-    return {k: v.to(device) for k, v in enc.items()}
-
-def compute_intra_sentence_similarity(embeddings, mask, mean_norm, eps=1e-12,average_over_batch=False):
-    """
-    Compute IntraSimᶩ(s) = (1/n) Σ_i cos(~sᶩ, fᶩ(s,i))
-    for each layer and batch.
-
-    Args:
-        embeddings: Tensor [L, B, T, H]
-            Layerwise token embeddings.
-        mask: Tensor [B, T, 1]
-            1 for valid tokens, 0 for padding.
-        mean_norm: Tensor [L, B, H]
-            Normalized mean embedding per layer and batch.
-        eps: float
-            Small epsilon for numerical stability.
-
-    Returns:
-        intra_sim: Tensor [L, B]
-            Intra-sentence similarity per layer and batch.
-    """
-     # Normalize token embeddings (safe even with zeroed padding)
-    emb_norm = embeddings / embeddings.norm(dim=-1, keepdim=True).clamp_min(eps)  # [L, B, T, H]
-
-    # Expand mean embedding to match token dimension
-    mean_norm_exp = mean_norm.unsqueeze(2)  # [L, B, 1, H]
-
-    # Cosine similarities for each token
-    cos_sim = (emb_norm * mean_norm_exp).sum(dim=-1)  # [L, B, T]
-
-    # Average across valid tokens
-    valid_counts = mask.squeeze(-1).sum(dim=1, keepdim=True).clamp(min=1)  # [B, 1]
-    print("valid_counts",valid_counts.transpose(0, 1))
-    intra_sim = cos_sim.sum(dim=2) / valid_counts.transpose(0, 1)  # [L, B]
-    print("intra_sim",intra_sim)
-    # Optionally average across batch
-    if average_over_batch:
-        intra_sim = intra_sim.mean(dim=1)  # [L]
-
-    return intra_sim
-
-def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"):
-    tokenizer,model = load_model(args.model_type,access_token,device=device)
-    model.eval()
-    # Example: access specific fields
-    
-    all_fail_flags_by_layer = defaultdict(list)
-    all_viols_by_layer = defaultdict(list)
-    LO_anchor_paraphrase_list_by_layer = defaultdict(list)
-    LO_anchor_distractor_list_by_layer = defaultdict(list)
-    LO_paraphrase_distractor_list_by_layer = defaultdict(list)
-    LO_negmax_list_by_layer = defaultdict(list)
-    LOc_list_by_layer = defaultdict(list)
-    DISTc_list_by_layer = defaultdict(list)
-
-    average_margin_lor_low_by_layer = defaultdict(float)
-    average_margin_violation_lor_low_by_layer = defaultdict(float)
-    failure_rate_lor_low_by_layer = defaultdict(int)
-
-    average_margin_lor_high_by_layer = defaultdict(float)
-    average_margin_violation_lor_high_by_layer = defaultdict(float)
-    failure_rate_lor_high_by_layer = defaultdict(int)
-
-    incorrect_pairs_by_layer = defaultdict(list)
-    correct_pairs_by_layer = defaultdict(list)
-    neg_pairs_by_layer = defaultdict(list)
-    pos_pairs_by_layer = defaultdict(list)
-
-    jaccard_scores_list_by_layer = defaultdict(list)
-    signed_margins_by_layer = defaultdict(list)
-
-    # intrasims_dict=defaultdict(list)
-    l = layers
-    
-    with nethook.TraceDict(model, l) as ret:
-        with torch.no_grad():
-            for batch in tqdm(data_loader, desc="Processing Rows"):
-   
-                anchors, paraphrases, distractors, LOS_flags = batch["anchor"], batch["paraphrase"], batch["distractor"], batch["lexical_overlap_flag"]
-                # anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
-                scores_jaccard = batch.get("score_jaccard", None).tolist()  # optional, list[float]
-                scores_overlap = batch.get("score_overlap", None).tolist()  # optional, list[float]
-                scores_containment = batch.get("score_containment", None).tolist()  # optional, list[float]
-              
-                inputs = build_batched_pt_inputs(tokenizer, anchors, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
-                if(args.mode):
-                    # print("Anchors",anchors)
-                    padded_zero_embeddings=anchor_sentence_embeddings * mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = mask.sum(dim=1)                                  # (B, L, 1)
-                    anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-                    # mean_norm = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                    # print("mean_norm" ,mean_norm.shape)
-                    # intrasims= compute_intra_sentence_similarity(padded_zero_embeddings, mask, mean_norm, eps=1e-12)
-                    
-                else:
-                    L, B, T, E = anchor_sentence_embeddings.shape
-                    base_mask = mask.squeeze(-1).to(anchor_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=anchor_sentence_embeddings.device, dtype=anchor_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    anchor_sentence_embeddings = anchor_sentence_embeddings.gather(2, idx).squeeze(2)
-                #_________________________________________________________________________________________
-                inputs = build_batched_pt_inputs(tokenizer, paraphrases, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                paraphrase_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
-                if(args.mode):
-                    padded_zero_embeddings=paraphrase_sentence_embeddings * mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
-                    paraphrase_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-                    
-                else:
-                    L, B, T, E = paraphrase_sentence_embeddings.shape
-                    base_mask = mask.squeeze(-1).to(paraphrase_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=paraphrase_sentence_embeddings.device, dtype=paraphrase_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    paraphrase_sentence_embeddings = paraphrase_sentence_embeddings.gather(2, idx).squeeze(2)
-                #_________________________________________________________________________________________
-                inputs = build_batched_pt_inputs(tokenizer, distractors, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                distractor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
-                if(args.mode):
-                    padded_zero_embeddings=distractor_sentence_embeddings * mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
-                    distractor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-
-                else:
-                    L, B, T, E = distractor_sentence_embeddings.shape
-                    base_mask = mask.squeeze(-1).to(distractor_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=distractor_sentence_embeddings.device, dtype=distractor_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    distractor_sentence_embeddings = distractor_sentence_embeddings.gather(2, idx).squeeze(2)
-                #_________________________________________________________________________________________
-
-                anchor_sentence_embeddings = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                paraphrase_sentence_embeddings = torch.nn.functional.normalize(paraphrase_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                distractor_sentence_embeddings = torch.nn.functional.normalize(distractor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                # print("anchor_sentence_embeddings",anchor_sentence_embeddings.shape)
-                # --- Cosine similctor   arities ---
-                cosine_anchor_paraphrase   = F.cosine_similarity(anchor_sentence_embeddings, paraphrase_sentence_embeddings, dim=2)
-                cosine_anchor_distractor = F.cosine_similarity(anchor_sentence_embeddings, distractor_sentence_embeddings, dim=2)
-                cosine_paraphrase_distractor = F.cosine_similarity(paraphrase_sentence_embeddings, distractor_sentence_embeddings, dim=2)
-
-
-                distances_anchor_paraphrase = torch.norm(anchor_sentence_embeddings - paraphrase_sentence_embeddings, p=2,dim=2)
-            
-                distances_anchor_distractor   = torch.norm(anchor_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
-                distances_paraphrase_distractor = torch.norm(paraphrase_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
-
-                for i in range(distances_anchor_paraphrase.size(1)):
-                    anchor = anchors[i]
-                    paraphrase = paraphrases[i]
-                    distractor = distractors[i]
-                    LOS_flag = LOS_flags[i]
-                    
-                    # --- text-only overlaps computed ONCE per sample ---
-                    LO_ap = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(paraphrase, "entities"))
-                    LO_ad = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(distractor, "entities"))
-                    LO_pd = _jaccard_overlap_pct(_counts(paraphrase, "entities"), _counts(distractor, "entities"))
-                    LO_negmax = max(LO_ad, LO_pd)
-                    LOc = LO_negmax - LO_ap
-
-                    for layer_idx, layer in enumerate(layers):
-                        layer_key = str(layer)
-                        layer_dir = os.path.join(args.save_path, layer_key)
-                        os.makedirs(layer_dir, exist_ok=True)
-                        file_save_path = os.path.join(layer_dir, "counterfact_results.jsonl")
-
-                        dap = distances_anchor_paraphrase[layer_idx, i].item()
-                        dpd = distances_paraphrase_distractor[layer_idx, i].item()
-                        dad = distances_anchor_distractor[layer_idx, i].item()
-
-                        cos_ap = cosine_anchor_paraphrase[layer_idx, i].item()
-                        cos_ad = cosine_anchor_distractor[layer_idx, i].item()
-                        cos_pd = cosine_paraphrase_distractor[layer_idx, i].item()
-                        # intrasim=intrasims[layer_idx,i].item()
-
-                        condition_anchor = dad < dap
-                        condition_paraphrase = dpd < dap
-                        failure = condition_anchor or condition_paraphrase
-                        possible_margin_violation = dap - min(dpd, dad)
-
-                        with open(file_save_path, 'a') as jsonl_file_writer:
-                            json.dump({
-                                "layer": layer_key,
-                                "distance_failure": failure,
-                                "lexical_overlap_flag": LOS_flag,
-                                "similarity_failure": ((cos_ad > cos_ap) or (cos_pd > cos_ap)),
-                                "distances": {"dist_cap1_cap2": dap, "dist_cap1_neg": dad, "dist_cap2_neg": dpd},
-                                "similarities": {"cos_cap1_cap2": cos_ap, "cos_cap1_neg": cos_ad, "cos_cap2_neg": cos_pd},
-                                "anchor": anchor, "paraphrase": paraphrase, "distractor": distractor,
-                                "score_jaccard": scores_jaccard[i],
-                                "score_overlap": scores_overlap[i],
-                                "score_containment": scores_containment[i],
-                                "LO_ap": LO_ap, "LO_ad": LO_ad, "LO_pd": LO_pd,
-                                "LO_negmax": LO_negmax, "LOc": LOc
-                            }, jsonl_file_writer)
-                            jsonl_file_writer.write("\n")
-
-                        # --- per-layer metric collectors ---
-                        # intrasims_dict[layer_key].append(intrasim)
-                        all_fail_flags_by_layer[layer_key].append(1 if failure else 0)
-                        all_viols_by_layer[layer_key].append(max(0.0, -possible_margin_violation))
-                        LO_anchor_paraphrase_list_by_layer[layer_key].append(LO_ap)
-                        LO_anchor_distractor_list_by_layer[layer_key].append(LO_ad)
-                        LO_paraphrase_distractor_list_by_layer[layer_key].append(LO_pd)
-                        LO_negmax_list_by_layer[layer_key].append(LO_negmax)
-                        LOc_list_by_layer[layer_key].append(LOc)
-                        DISTc_list_by_layer[layer_key].append(possible_margin_violation)
-
-                        if (LOS_flag == "low"):
-                            if failure:
-                                jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
-                                signed_margins_by_layer[layer_key].append(possible_margin_violation)
-                                average_margin_violation_lor_low_by_layer[layer_key] += possible_margin_violation
-                                failure_rate_lor_low_by_layer[layer_key] += 1
-                            average_margin_lor_low_by_layer[layer_key] += possible_margin_violation
-                        elif (LOS_flag == "high"):
-                            if failure:
-                                jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
-                                signed_margins_by_layer[layer_key].append(possible_margin_violation)
-                                average_margin_violation_lor_high_by_layer[layer_key] += possible_margin_violation
-                                failure_rate_lor_high_by_layer[layer_key] += 1
-                            average_margin_lor_high_by_layer[layer_key] += possible_margin_violation
-
-                        if (dad <= dpd):
-                            incorrect_pairs_by_layer[layer_key].append(dad)
-                            neg_pairs_by_layer[layer_key].append((anchor, distractor))
-                        else:
-                            incorrect_pairs_by_layer[layer_key].append(dpd)
-                            neg_pairs_by_layer[layer_key].append((paraphrase, distractor))
-
-                        correct_pairs_by_layer[layer_key].append(dap)
-                        pos_pairs_by_layer[layer_key].append((anchor, paraphrase))
-
-
-            for layer in tqdm(layers, desc="Processing Layers Final"):
-                layer_key = str(layer)
-                layer_dir = os.path.join(args.save_path, layer_key)
-                os.makedirs(layer_dir, exist_ok=True)
-                summary_path = os.path.join(layer_dir, "counterfact_summary.jsonl")
-
-                # numpy conversions
-                LO_negmax_arr = np.asarray(LO_negmax_list_by_layer[layer_key], dtype=float)
-                all_fail_arr = np.asarray(all_fail_flags_by_layer[layer_key], dtype=int)
-                LOc_arr = np.asarray(LOc_list_by_layer[layer_key], dtype=float)
-                DISTc_arr = np.asarray(DISTc_list_by_layer[layer_key], dtype=float)
-                all_viols_arr = np.asarray(all_viols_by_layer[layer_key], dtype=float)
-                # intrasims_dict_arr = np.asarray(intrasims_dict[layer_key], dtype=float).mean()
-                # print("intrasims_dict_arr",intrasims_dict_arr.shape)
-                # failure stats
-                total_samples_layer = len(all_fail_arr)
-                total_failures_layer = int(all_fail_arr.sum()) if total_samples_layer > 0 else 0
-                failure_rate_layer = (total_failures_layer / total_samples_layer) if total_samples_layer > 0 else 0.0
-
-                margin_violation_layer = float(np.nansum(all_viols_arr)) if all_viols_arr.size > 0 else 0.0
-                avg_margin_violation_layer = (margin_violation_layer / total_failures_layer) if total_failures_layer > 0 else 0.0
-
-                # stratified fail rates by overlap (Q1 vs Q4)
-                fail_rate_high = np.nan
-                fail_rate_low = np.nan
-                fail_rate_gap = np.nan
-                rel_risk = np.nan
-                if LO_negmax_arr.size > 0 and all_fail_arr.size > 0:
-                    q1, q4 = np.quantile(LO_negmax_arr, [0.25, 0.75])
-                    low_bin = (LO_negmax_arr <= q1)
-                    high_bin = (LO_negmax_arr >= q4)
-                    if low_bin.any():
-                        fail_rate_low = float(all_fail_arr[low_bin].mean())
-                    if high_bin.any():
-                        fail_rate_high = float(all_fail_arr[high_bin].mean())
-                    if low_bin.any() and high_bin.any():
-                        fail_rate_gap = float(fail_rate_high - fail_rate_low)
-                        rel_risk = float(fail_rate_high / max(fail_rate_low, 1e-12))
-
-                # predictive power (AUC)
-                auc_overlap = np.nan
-                if all_fail_arr.size > 0 and (all_fail_arr.min() != all_fail_arr.max()):
-                    try:
-                        auc_overlap = float(roc_auc_score(all_fail_arr, LOc_arr))
-                    except Exception:
-                        auc_overlap = np.nan
-
-                # failure severity gap (within failures)
-                sev_gap = np.nan
-                mask_fail = (all_fail_arr == 1)
-                if mask_fail.any():
-                    Jf = LO_negmax_arr[mask_fail]
-                    Vf = all_viols_arr[mask_fail]
-                    if Jf.size > 0:
-                        jf_q1, jf_q4 = np.quantile(Jf, [0.25, 0.75])
-                        lo_f = Vf[Jf <= jf_q1]
-                        hi_f = Vf[Jf >= jf_q4]
-                        if lo_f.size > 0 and hi_f.size > 0:
-                            sev_gap = float(np.median(hi_f) - np.median(lo_f))
-
-                with open(summary_path, 'a') as jsonl_file_writer:
-                    json.dump({
-                        "layer": layer_key,
-                        # "intrasims_dict": float(intrasims_dict_arr),
-                        "Failure Rate": failure_rate_layer,
-                        "Average Margin Violation": avg_margin_violation_layer,
-                        "FailRate_high_Q4": None if np.isnan(fail_rate_high) else fail_rate_high,
-                        "FailRate_low_Q1":  None if np.isnan(fail_rate_low)  else fail_rate_low,
-                        "FailRate_gap_Q4_minus_Q1": None if np.isnan(fail_rate_gap) else fail_rate_gap,
-                        "RelativeRisk_high_over_low": None if np.isnan(rel_risk) else rel_risk,
-                        "AUC_LOcontrast_to_failure": None if np.isnan(auc_overlap) else auc_overlap,
-                        "Failure_severity_median_gap_Q4_minus_Q1": None if np.isnan(sev_gap) else sev_gap
-                    }, jsonl_file_writer)
-                    jsonl_file_writer.write("\n")
-
-                # optional: per-layer plots
-                _ = analyze_and_save_distances(
-                    incorrect_pairs_by_layer[layer_key],
-                    correct_pairs_by_layer[layer_key],
-                    title_prefix=f"Counterfact_Layer_{layer_key}",
-                    out_dir=layer_dir,
-                    group_neg_name="Non-Paraphrase",
-                    group_pos_name="Paraphrase",
-                    neg_text_pairs=neg_pairs_by_layer[layer_key],
-                    pos_text_pairs=pos_pairs_by_layer[layer_key],
-                    neg_color="#2EA884",
-                    pos_color="#D7732D",
-                    hist_alpha=0.35,
-                    kde_linewidth=2.0,
-                    ecdf_linewidth=2.0,
-                    tau_color="#000000",
-                    tau_linestyle="--",
-                    tau_linewidth=1.5,
-                    violin_facealpha=0.35,
-                    box_facealpha=0.35,
-                )
-#endregion         
-
-
-#----------------------------------------------------------------------------
-# Section: Gemma IT Counterfact
-#----------------------------------------------------------------------------
-#region Gemma IT Counterfact
-
-def get_mask_text(inputs, tokenizer, texts, embeddings, device="auto"):
-    """
-    If embeddings.ndim == 3: (B, L, H)  -> returns (B, L, 1)
-    If embeddings.ndim == 4: (T, B, L, H) -> returns (T, B, L, 1)
-    """
-    if device == "auto":
-        device = embeddings.device
-
-    # Tokenize raw texts WITHOUT specials to get the content pattern
-    _tok = tokenizer(list(texts), add_special_tokens=False)
-
-    if embeddings.ndim == 3:
-        B, L, _H = embeddings.shape
-        T = None
-    elif embeddings.ndim == 4:
-        T, B, L, _H = embeddings.shape
-    else:
-        raise ValueError(f"embeddings must be 3D or 4D, got shape {embeddings.shape}")
-
-    # Build a base (B, L, 1) mask once
-    base_mask = torch.zeros((B, L, 1), dtype=embeddings.dtype, device=device)
-
-    input_ids_batch = inputs["input_ids"]      # (B, L)
-    attention_mask  = inputs["attention_mask"] # (B, L)
-
-    for i, pat in enumerate(_tok["input_ids"]):
-        seq = input_ids_batch[i].tolist()
-        m = len(pat)
-        best_j = -1
-        if m > 0 and m <= len(seq):
-            # reverse search: stop at the first match from the end
-            for j in range(len(seq) - m, -1, -1):
-                if seq[j:j+m] == pat:
-                    best_j = j
-                    break
-
-        if best_j >= 0:
-            base_mask[i, best_j:best_j+m, 0] = 1.0
-        else:
-            # Fallback: non-empty mask using attention
-            base_mask[i] = attention_mask[i].unsqueeze(-1).type_as(base_mask)
-
-    # Safety: guarantee at least 1 token selected per row
-    empty = (base_mask.sum(dim=1) == 0).squeeze(-1)
-    if empty.any():
-        base_mask[empty] = attention_mask[empty].unsqueeze(-1).type_as(base_mask)
-
-    # If 4D embeddings: replicate across layers to (T, B, L, 1)
-    if T is not None:
-        # Use expand, not repeat, to avoid extra memory unless you need a writeable copy
-        mask = base_mask.unsqueeze(0).expand(T, B, L, 1)
-    else:
-        mask = base_mask
-
-    return mask
-
-def build_batched_chat_inputs(tokenizer, texts, add_generation_prompt=True,PROMPT="", device="auto"):
-    """
-    Build a batch of chat-formatted prompts for Gemma-IT using tokenizer.apply_chat_template.
-    `texts` is a list[str] (already lowercased / formatted upstream if you want).
-    Returns: dict with input_ids, attention_mask on device.
-    """
-    # Each item in the batch is a full conversation (list of messages)
-    conversations = [
-        [
-            
-            {"role": "user",
-             "content": [{"type": "text", "text": "{}".format(t.lower())}]}
-        ]
-        for t in texts
-    ]
-    # conversations = [
-    # [
-    #     {"role": "system",
-    #      "content": [{"type": "text", "text": PROMPT.strip()}]},
-    #     {"role": "user",
-    #      "content": [{"type": "text", "text": "{}".format(t.lower())}]}
-    # ]
-#     for t in texts
-# ]
-
-    inputs = tokenizer.apply_chat_template(
-        conversations,
-        add_generation_prompt=add_generation_prompt,
-        tokenize=True,
-        padding=True,                # important for batching
-        return_dict=True,
-        return_tensors="pt"
-    )
-    return {k: v.to(device) for k, v in inputs.items()}
-
+# import repitl.difference_of_entropies as dent
+_spearman = lambda x, y: spearmanr(x, y, nan_policy="omit")
+from embeddings_processing_tokenization import get_embeddings_pt,get_embedding_it
+from model_loaders import get_model
+import numpy as np
+import torch
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 def compute_intrasim_same_mask_across_layers(
     embeddings: torch.Tensor,           # [L, B, T, H]  unmasked token embeddings
     mask: torch.Tensor,                 # [B, T, 1] or [L, B, T, 1], same across layers
@@ -558,9 +78,12 @@ def compute_intrasim_same_mask_across_layers(
         intra_sim = intra_sim.mean(dim=1)                          # [L]
 
     return intra_sim
-
-def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"):
-    tokenizer,model = load_model(args.model_type,access_token,device=device)
+#----------------------------------------------------------------------------
+# Section: Gemma PT Counterfact
+#----------------------------------------------------------------------------
+#region Gemma PT Counterfact
+def gemma_pt_counterfact_scpp(data_loader,args,access_token,layers,device="auto"):
+    model,tokenizer = get_model(args.model_type,access_token,device=device)
     model.eval()
     # Example: access specific fields
     
@@ -588,455 +111,663 @@ def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"
 
     jaccard_scores_list_by_layer = defaultdict(list)
     signed_margins_by_layer = defaultdict(list)
-    intrasims_dict=defaultdict(list)
 
-    l = layers
+    # intrasims_dict=defaultdict(list)
     
-    with nethook.TraceDict(model, l) as ret:
-        with torch.no_grad():
-            for batch in tqdm(data_loader, desc="Processing Rows"):
+    with torch.no_grad():
+        for batch in tqdm(data_loader, desc="Processing Rows"):
+            anchors, paraphrases, distractors, LOS_flags = batch["anchor"], batch["paraphrase"], batch["distractor"], batch["lexical_overlap_flag"]
+            # anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
+            scores_jaccard = batch.get("score_jaccard", None).tolist()  # optional, list[float]
+            scores_overlap = batch.get("score_overlap", None).tolist()  # optional, list[float]
+            scores_containment = batch.get("score_containment", None).tolist()  # optional, list[float]
+
+            anchor_sentence_embeddings,paraphrase_sentence_embeddings,distractor_sentence_embeddings = get_embeddings_pt(model,tokenizer,args,{"anchors": anchors, "paraphrases": paraphrases, "distractors": distractors}, layers, normalize=True, device=device)
+
+            cosine_anchor_paraphrase   = F.cosine_similarity(anchor_sentence_embeddings, paraphrase_sentence_embeddings, dim=2)
+            cosine_anchor_distractor = F.cosine_similarity(anchor_sentence_embeddings, distractor_sentence_embeddings, dim=2)
+            cosine_paraphrase_distractor = F.cosine_similarity(paraphrase_sentence_embeddings, distractor_sentence_embeddings, dim=2)
+
+            distances_anchor_paraphrase = torch.norm(anchor_sentence_embeddings - paraphrase_sentence_embeddings, p=2,dim=2)
+            distances_anchor_distractor   = torch.norm(anchor_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
+            distances_paraphrase_distractor = torch.norm(paraphrase_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
+
+            for i in range(distances_anchor_paraphrase.size(1)):
+                anchor = anchors[i]
+                paraphrase = paraphrases[i]
+                distractor = distractors[i]
+                LOS_flag = LOS_flags[i]
+                
+                # --- text-only overlaps computed ONCE per sample ---
+                LO_ap = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(paraphrase, "entities"))
+                LO_ad = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(distractor, "entities"))
+                LO_pd = _jaccard_overlap_pct(_counts(paraphrase, "entities"), _counts(distractor, "entities"))
+                LO_negmax = max(LO_ad, LO_pd)
+                LOc = LO_negmax - LO_ap
+
+                for layer_idx, layer in enumerate(layers):
+                    layer_key = str(layer)
+                    layer_dir = os.path.join(args.save_path, layer_key)
+                    os.makedirs(layer_dir, exist_ok=True)
+                    file_save_path = os.path.join(layer_dir, "counterfact_results.jsonl")
+
+                    dap = distances_anchor_paraphrase[layer_idx, i].item()
+                    dpd = distances_paraphrase_distractor[layer_idx, i].item()
+                    dad = distances_anchor_distractor[layer_idx, i].item()
+
+                    cos_ap = cosine_anchor_paraphrase[layer_idx, i].item()
+                    cos_ad = cosine_anchor_distractor[layer_idx, i].item()
+                    cos_pd = cosine_paraphrase_distractor[layer_idx, i].item()
+                    # intrasim=intrasims[layer_idx,i].item()
+
+                    condition_anchor = dad < dap
+                    condition_paraphrase = dpd < dap
+                    failure = condition_anchor or condition_paraphrase
+                    possible_margin_violation = dap - min(dpd, dad)
+
+                    with open(file_save_path, 'a') as jsonl_file_writer:
+                        json.dump({
+                            "layer": layer_key,
+                            "distance_failure": failure,
+                            "lexical_overlap_flag": LOS_flag,
+                            "similarity_failure": ((cos_ad > cos_ap) or (cos_pd > cos_ap)),
+                            "distances": {"dist_cap1_cap2": dap, "dist_cap1_neg": dad, "dist_cap2_neg": dpd},
+                            "similarities": {"cos_cap1_cap2": cos_ap, "cos_cap1_neg": cos_ad, "cos_cap2_neg": cos_pd},
+                            "anchor": anchor, "paraphrase": paraphrase, "distractor": distractor,
+                            "score_jaccard": scores_jaccard[i],
+                            "score_overlap": scores_overlap[i],
+                            "score_containment": scores_containment[i],
+                            "LO_ap": LO_ap, "LO_ad": LO_ad, "LO_pd": LO_pd,
+                            "LO_negmax": LO_negmax, "LOc": LOc
+                        }, jsonl_file_writer)
+                        jsonl_file_writer.write("\n")
+
+                    # --- per-layer metric collectors ---
+                    # intrasims_dict[layer_key].append(intrasim)
+                    all_fail_flags_by_layer[layer_key].append(1 if failure else 0)
+                    all_viols_by_layer[layer_key].append(max(0.0, -possible_margin_violation))
+                    LO_anchor_paraphrase_list_by_layer[layer_key].append(LO_ap)
+                    LO_anchor_distractor_list_by_layer[layer_key].append(LO_ad)
+                    LO_paraphrase_distractor_list_by_layer[layer_key].append(LO_pd)
+                    LO_negmax_list_by_layer[layer_key].append(LO_negmax)
+                    LOc_list_by_layer[layer_key].append(LOc)
+                    DISTc_list_by_layer[layer_key].append(possible_margin_violation)
+
+                    if (LOS_flag == "low"):
+                        if failure:
+                            jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
+                            signed_margins_by_layer[layer_key].append(possible_margin_violation)
+                            average_margin_violation_lor_low_by_layer[layer_key] += possible_margin_violation
+                            failure_rate_lor_low_by_layer[layer_key] += 1
+                        average_margin_lor_low_by_layer[layer_key] += possible_margin_violation
+                    elif (LOS_flag == "high"):
+                        if failure:
+                            jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
+                            signed_margins_by_layer[layer_key].append(possible_margin_violation)
+                            average_margin_violation_lor_high_by_layer[layer_key] += possible_margin_violation
+                            failure_rate_lor_high_by_layer[layer_key] += 1
+                        average_margin_lor_high_by_layer[layer_key] += possible_margin_violation
+
+                    if (dad <= dpd):
+                        incorrect_pairs_by_layer[layer_key].append(dad)
+                        neg_pairs_by_layer[layer_key].append((anchor, distractor))
+                    else:
+                        incorrect_pairs_by_layer[layer_key].append(dpd)
+                        neg_pairs_by_layer[layer_key].append((paraphrase, distractor))
+
+                    correct_pairs_by_layer[layer_key].append(dap)
+                    pos_pairs_by_layer[layer_key].append((anchor, paraphrase))
+
+    process_and_write(args, layers, LO_negmax_list_by_layer, all_fail_flags_by_layer, LOc_list_by_layer, DISTc_list_by_layer, all_viols_by_layer, incorrect_pairs_by_layer, correct_pairs_by_layer, neg_pairs_by_layer, pos_pairs_by_layer)
+       
+#endregion         
+
+
+#----------------------------------------------------------------------------
+# Section: Gemma IT Counterfact
+#----------------------------------------------------------------------------
+#region Gemma IT Counterfact
+def gemma_it_counterfact_scpp(data_loader,args,access_token,layers,device="auto"):
+    model, tokenizer = get_model(args.model_type,access_token,device=device)
+    model.eval()
+    # Example: access specific fields
     
-                anchors, paraphrases, distractors, LOS_flags = batch["anchor"], batch["paraphrase"], batch["distractor"], batch["lexical_overlap_flag"]
-                # anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
-                scores_jaccard = batch.get("score_jaccard", None).tolist()  # optional, list[float]
-                scores_overlap = batch.get("score_overlap", None).tolist()  # optional, list[float]
-                scores_containment = batch.get("score_containment", None).tolist()  # optional, list[float]
-              
-                inputs = build_batched_chat_inputs(tokenizer, anchors, "", device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                # print("anchor_sentence_embeddings",anchor_sentence_embeddings.shape)
-                content_mask = get_mask_text(inputs, tokenizer, anchors, anchor_sentence_embeddings, device=device) 
-                # print("content_mask",content_mask.shape)
-                if(args.mode):
-                    intrasims= compute_intrasim_same_mask_across_layers(anchor_sentence_embeddings, content_mask, eps=1e-12)
-                    # print("intrasims",intrasims.shape)
-                    padded_zero_embeddings=anchor_sentence_embeddings * content_mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = content_mask.sum(dim=2)                                     # (B, ,L, 1)
-                    anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-                    mean_norm = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                    # print("mean_norm",mean_norm.shape)
-                    
-                    
+    all_fail_flags_by_layer = defaultdict(list)
+    all_viols_by_layer = defaultdict(list)
+    LO_anchor_paraphrase_list_by_layer = defaultdict(list)
+    LO_anchor_distractor_list_by_layer = defaultdict(list)
+    LO_paraphrase_distractor_list_by_layer = defaultdict(list)
+    LO_negmax_list_by_layer = defaultdict(list)
+    LOc_list_by_layer = defaultdict(list)
+    DISTc_list_by_layer = defaultdict(list)
 
-                else:
-                    L, B, T, E = anchor_sentence_embeddings.shape
-                    base_mask = content_mask[0].squeeze(-1).to(anchor_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=anchor_sentence_embeddings.device, dtype=anchor_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    anchor_sentence_embeddings = anchor_sentence_embeddings.gather(2, idx).squeeze(2)
-                #_________________________________________________________________________________________
-                inputs = build_batched_chat_inputs(tokenizer, paraphrases, "", device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                paraphrase_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                content_mask = get_mask_text(inputs, tokenizer, paraphrases, paraphrase_sentence_embeddings, device=device) 
-                if(args.mode):
-                    padded_zero_embeddings=paraphrase_sentence_embeddings * content_mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = content_mask.sum(dim=2)                                     # (B, ,L, 1)
-                    paraphrase_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+    average_margin_lor_low_by_layer = defaultdict(float)
+    average_margin_violation_lor_low_by_layer = defaultdict(float)
+    failure_rate_lor_low_by_layer = defaultdict(int)
 
-                else:
-                    L, B, T, E = paraphrase_sentence_embeddings.shape
-                    base_mask = content_mask[0].squeeze(-1).to(paraphrase_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=paraphrase_sentence_embeddings.device, dtype=paraphrase_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    paraphrase_sentence_embeddings = paraphrase_sentence_embeddings.gather(2, idx).squeeze(2)
+    average_margin_lor_high_by_layer = defaultdict(float)
+    average_margin_violation_lor_high_by_layer = defaultdict(float)
+    failure_rate_lor_high_by_layer = defaultdict(int)
 
-                    
-                #_________________________________________________________________________________________
-                inputs = build_batched_chat_inputs(tokenizer, distractors, "", device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                distractor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                content_mask = get_mask_text(inputs, tokenizer, distractors, distractor_sentence_embeddings, device=device) 
-                if(args.mode):
-                    padded_zero_embeddings=distractor_sentence_embeddings * content_mask
-                    sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                    lengths = content_mask.sum(dim=2)                                     # (B, ,L, 1)
-                    distractor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+    incorrect_pairs_by_layer = defaultdict(list)
+    correct_pairs_by_layer = defaultdict(list)
+    neg_pairs_by_layer = defaultdict(list)
+    pos_pairs_by_layer = defaultdict(list)
 
-                else:
-                    L, B, T, E = distractor_sentence_embeddings.shape
-                    base_mask = content_mask[0].squeeze(-1).to(distractor_sentence_embeddings.dtype)
-                    token_range = torch.arange(T, device=distractor_sentence_embeddings.device, dtype=distractor_sentence_embeddings.dtype)
-                    last_idx = (base_mask * token_range).argmax(dim=1).long()
-                    idx = last_idx.view(1, B, 1, 1).expand(L, B, 1, E)
-                    distractor_sentence_embeddings = distractor_sentence_embeddings.gather(2, idx).squeeze(2)
-                #_________________________________________________________________________________________
+    jaccard_scores_list_by_layer = defaultdict(list)
+    signed_margins_by_layer = defaultdict(list)
+    # intrasims_dict=defaultdict(list)
+    
+    for batch in tqdm(data_loader, desc="Processing Rows"):
 
-                anchor_sentence_embeddings = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                paraphrase_sentence_embeddings = torch.nn.functional.normalize(paraphrase_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                distractor_sentence_embeddings = torch.nn.functional.normalize(distractor_sentence_embeddings, p=2, dim=2, eps=1e-12)
-                # print("anchor_sentence_embeddings",anchor_sentence_embeddings.shape)
-                # --- Cosine similctor   arities ---
-                cosine_anchor_paraphrase   = F.cosine_similarity(anchor_sentence_embeddings, paraphrase_sentence_embeddings, dim=2)
-                cosine_anchor_distractor = F.cosine_similarity(anchor_sentence_embeddings, distractor_sentence_embeddings, dim=2)
-                cosine_paraphrase_distractor = F.cosine_similarity(paraphrase_sentence_embeddings, distractor_sentence_embeddings, dim=2)
+        anchors, paraphrases, distractors, LOS_flags = batch["anchor"], batch["paraphrase"], batch["distractor"], batch["lexical_overlap_flag"]
+        scores_jaccard = batch.get("score_jaccard", None).tolist()  # optional, list[float]
+        scores_overlap = batch.get("score_overlap", None).tolist()  # optional, list[float]
+        scores_containment = batch.get("score_containment", None).tolist()  # optional, list[float]
+        anchor_sentence_embeddings,paraphrase_sentence_embeddings,distractor_sentence_embeddings = get_embedding_it(model,tokenizer,args, {"anchors": anchors, "paraphrases": paraphrases, "distractors": distractors}, layers, normalize=True, device=device)
+        
+        #_________________________________________________________________________________________
 
+        cosine_anchor_paraphrase   = F.cosine_similarity(anchor_sentence_embeddings, paraphrase_sentence_embeddings, dim=2)
+        cosine_anchor_distractor = F.cosine_similarity(anchor_sentence_embeddings, distractor_sentence_embeddings, dim=2)
+        cosine_paraphrase_distractor = F.cosine_similarity(paraphrase_sentence_embeddings, distractor_sentence_embeddings, dim=2)
 
-                distances_anchor_paraphrase = torch.norm(anchor_sentence_embeddings - paraphrase_sentence_embeddings, p=2,dim=2)
-            
-                distances_anchor_distractor   = torch.norm(anchor_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
-                distances_paraphrase_distractor = torch.norm(paraphrase_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
+        distances_anchor_paraphrase = torch.norm(anchor_sentence_embeddings - paraphrase_sentence_embeddings, p=2,dim=2)
+        distances_anchor_distractor   = torch.norm(anchor_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
+        distances_paraphrase_distractor = torch.norm(paraphrase_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
 
-                for i in range(distances_anchor_paraphrase.size(1)):
-                    anchor = anchors[i]
-                    paraphrase = paraphrases[i]
-                    distractor = distractors[i]
-                    LOS_flag = LOS_flags[i]
+        for i in range(distances_anchor_paraphrase.size(1)):
+            anchor = anchors[i]
+            paraphrase = paraphrases[i]
+            distractor = distractors[i]
+            LOS_flag = LOS_flags[i]
 
-                    # --- text-only overlaps computed ONCE per sample ---
-                    LO_ap = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(paraphrase, "entities"))
-                    LO_ad = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(distractor, "entities"))
-                    LO_pd = _jaccard_overlap_pct(_counts(paraphrase, "entities"), _counts(distractor, "entities"))
-                    LO_negmax = max(LO_ad, LO_pd)
-                    LOc = LO_negmax - LO_ap
+            # --- text-only overlaps computed ONCE per sample ---
+            LO_ap = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(paraphrase, "entities"))
+            LO_ad = _jaccard_overlap_pct(_counts(anchor, "entities"), _counts(distractor, "entities"))
+            LO_pd = _jaccard_overlap_pct(_counts(paraphrase, "entities"), _counts(distractor, "entities"))
+            LO_negmax = max(LO_ad, LO_pd)
+            LOc = LO_negmax - LO_ap
 
-                    for layer_idx, layer in enumerate(layers):
-                        layer_key = str(layer)
-                        layer_dir = os.path.join(args.save_path, layer_key)
-                        os.makedirs(layer_dir, exist_ok=True)
-                        file_save_path = os.path.join(layer_dir, "counterfact_results.jsonl")
-
-                        dap = distances_anchor_paraphrase[layer_idx, i].item()
-                        dpd = distances_paraphrase_distractor[layer_idx, i].item()
-                        dad = distances_anchor_distractor[layer_idx, i].item()
-
-                        cos_ap = cosine_anchor_paraphrase[layer_idx, i].item()
-                        cos_ad = cosine_anchor_distractor[layer_idx, i].item()
-                        cos_pd = cosine_paraphrase_distractor[layer_idx, i].item()
-                        intrasim=intrasims[layer_idx,i].item()
-                        
-                        condition_anchor = dad < dap
-                        condition_paraphrase = dpd < dap
-                        failure = condition_anchor or condition_paraphrase
-                        possible_margin_violation = dap - min(dpd, dad)
-
-                        with open(file_save_path, 'a') as jsonl_file_writer:
-                            json.dump({
-                                "layer": layer_key,
-                                "distance_failure": failure,
-                                "lexical_overlap_flag": LOS_flag,
-                                "similarity_failure": ((cos_ad > cos_ap) or (cos_pd > cos_ap)),
-                                "distances": {"dist_cap1_cap2": dap, "dist_cap1_neg": dad, "dist_cap2_neg": dpd},
-                                "similarities": {"cos_cap1_cap2": cos_ap, "cos_cap1_neg": cos_ad, "cos_cap2_neg": cos_pd},
-                                "anchor": anchor, "paraphrase": paraphrase, "distractor": distractor,
-                                "score_jaccard": scores_jaccard[i],
-                                "score_overlap": scores_overlap[i],
-                                "score_containment": scores_containment[i],
-                                "LO_ap": LO_ap, "LO_ad": LO_ad, "LO_pd": LO_pd,
-                                "LO_negmax": LO_negmax, "LOc": LOc
-                            }, jsonl_file_writer)
-                            jsonl_file_writer.write("\n")
-
-                        # --- per-layer metric collectors ---
-                        intrasims_dict[layer_key].append(intrasim)
-                        all_fail_flags_by_layer[layer_key].append(1 if failure else 0)
-                        all_viols_by_layer[layer_key].append(max(0.0, -possible_margin_violation))
-                        LO_anchor_paraphrase_list_by_layer[layer_key].append(LO_ap)
-                        LO_anchor_distractor_list_by_layer[layer_key].append(LO_ad)
-                        LO_paraphrase_distractor_list_by_layer[layer_key].append(LO_pd)
-                        LO_negmax_list_by_layer[layer_key].append(LO_negmax)
-                        LOc_list_by_layer[layer_key].append(LOc)
-                        DISTc_list_by_layer[layer_key].append(possible_margin_violation)
-
-                        if (LOS_flag == "low"):
-                            if failure:
-                                jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
-                                signed_margins_by_layer[layer_key].append(possible_margin_violation)
-                                average_margin_violation_lor_low_by_layer[layer_key] += possible_margin_violation
-                                failure_rate_lor_low_by_layer[layer_key] += 1
-                            average_margin_lor_low_by_layer[layer_key] += possible_margin_violation
-                        elif (LOS_flag == "high"):
-                            if failure:
-                                jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
-                                signed_margins_by_layer[layer_key].append(possible_margin_violation)
-                                average_margin_violation_lor_high_by_layer[layer_key] += possible_margin_violation
-                                failure_rate_lor_high_by_layer[layer_key] += 1
-                            average_margin_lor_high_by_layer[layer_key] += possible_margin_violation
-
-                        if (dad <= dpd):
-                            incorrect_pairs_by_layer[layer_key].append(dad)
-                            neg_pairs_by_layer[layer_key].append((anchor, distractor))
-                        else:
-                            incorrect_pairs_by_layer[layer_key].append(dpd)
-                            neg_pairs_by_layer[layer_key].append((paraphrase, distractor))
-
-                        correct_pairs_by_layer[layer_key].append(dap)
-                        pos_pairs_by_layer[layer_key].append((anchor, paraphrase))
-
-
-            for layer in tqdm(layers, desc="Processing Layers Final"):
+            for layer_idx, layer in enumerate(layers):
                 layer_key = str(layer)
                 layer_dir = os.path.join(args.save_path, layer_key)
                 os.makedirs(layer_dir, exist_ok=True)
-                summary_path = os.path.join(layer_dir, "counterfact_summary.jsonl")
+                file_save_path = os.path.join(layer_dir, "counterfact_results.jsonl")
 
-                # numpy conversions
-                LO_negmax_arr = np.asarray(LO_negmax_list_by_layer[layer_key], dtype=float)
-                all_fail_arr = np.asarray(all_fail_flags_by_layer[layer_key], dtype=int)
-                LOc_arr = np.asarray(LOc_list_by_layer[layer_key], dtype=float)
-                DISTc_arr = np.asarray(DISTc_list_by_layer[layer_key], dtype=float)
-                all_viols_arr = np.asarray(all_viols_by_layer[layer_key], dtype=float)
-                intrasims_dict_arr = np.asarray(intrasims_dict[layer_key], dtype=float).mean()
-                # failure stats
-                total_samples_layer = len(all_fail_arr)
-                total_failures_layer = int(all_fail_arr.sum()) if total_samples_layer > 0 else 0
-                failure_rate_layer = (total_failures_layer / total_samples_layer) if total_samples_layer > 0 else 0.0
+                dap = distances_anchor_paraphrase[layer_idx, i].item()
+                dpd = distances_paraphrase_distractor[layer_idx, i].item()
+                dad = distances_anchor_distractor[layer_idx, i].item()
 
-                margin_violation_layer = float(np.nansum(all_viols_arr)) if all_viols_arr.size > 0 else 0.0
-                avg_margin_violation_layer = (margin_violation_layer / total_failures_layer) if total_failures_layer > 0 else 0.0
+                cos_ap = cosine_anchor_paraphrase[layer_idx, i].item()
+                cos_ad = cosine_anchor_distractor[layer_idx, i].item()
+                cos_pd = cosine_paraphrase_distractor[layer_idx, i].item()
+                # intrasim=intrasims[layer_idx,i].item()
+                
+                condition_anchor = dad < dap
+                condition_paraphrase = dpd < dap
+                failure = condition_anchor or condition_paraphrase
+                possible_margin_violation = dap - min(dpd, dad)
 
-                # stratified fail rates by overlap (Q1 vs Q4)
-                fail_rate_high = np.nan
-                fail_rate_low = np.nan
-                fail_rate_gap = np.nan
-                rel_risk = np.nan
-                if LO_negmax_arr.size > 0 and all_fail_arr.size > 0:
-                    q1, q4 = np.quantile(LO_negmax_arr, [0.25, 0.75])
-                    low_bin = (LO_negmax_arr <= q1)
-                    high_bin = (LO_negmax_arr >= q4)
-                    if low_bin.any():
-                        fail_rate_low = float(all_fail_arr[low_bin].mean())
-                    if high_bin.any():
-                        fail_rate_high = float(all_fail_arr[high_bin].mean())
-                    if low_bin.any() and high_bin.any():
-                        fail_rate_gap = float(fail_rate_high - fail_rate_low)
-                        rel_risk = float(fail_rate_high / max(fail_rate_low, 1e-12))
-
-                # predictive power (AUC)
-                auc_overlap = np.nan
-                if all_fail_arr.size > 0 and (all_fail_arr.min() != all_fail_arr.max()):
-                    try:
-                        auc_overlap = float(roc_auc_score(all_fail_arr, LOc_arr))
-                    except Exception:
-                        auc_overlap = np.nan
-
-                # failure severity gap (within failures)
-                sev_gap = np.nan
-                mask_fail = (all_fail_arr == 1)
-                if mask_fail.any():
-                    Jf = LO_negmax_arr[mask_fail]
-                    Vf = all_viols_arr[mask_fail]
-                    if Jf.size > 0:
-                        jf_q1, jf_q4 = np.quantile(Jf, [0.25, 0.75])
-                        lo_f = Vf[Jf <= jf_q1]
-                        hi_f = Vf[Jf >= jf_q4]
-                        if lo_f.size > 0 and hi_f.size > 0:
-                            sev_gap = float(np.median(hi_f) - np.median(lo_f))
-
-                with open(summary_path, 'a') as jsonl_file_writer:
+                with open(file_save_path, 'a') as jsonl_file_writer:
                     json.dump({
                         "layer": layer_key,
-                        "intrasims_dict": float(intrasims_dict_arr),
-                        "Failure Rate": failure_rate_layer,
-                        "Average Margin Violation": avg_margin_violation_layer,
-                        "FailRate_high_Q4": None if np.isnan(fail_rate_high) else fail_rate_high,
-                        "FailRate_low_Q1":  None if np.isnan(fail_rate_low)  else fail_rate_low,
-                        "FailRate_gap_Q4_minus_Q1": None if np.isnan(fail_rate_gap) else fail_rate_gap,
-                        "RelativeRisk_high_over_low": None if np.isnan(rel_risk) else rel_risk,
-                        "AUC_LOcontrast_to_failure": None if np.isnan(auc_overlap) else auc_overlap,
-                        "Failure_severity_median_gap_Q4_minus_Q1": None if np.isnan(sev_gap) else sev_gap
+                        "distance_failure": failure,
+                        "lexical_overlap_flag": LOS_flag,
+                        "similarity_failure": ((cos_ad > cos_ap) or (cos_pd > cos_ap)),
+                        "distances": {"dist_cap1_cap2": dap, "dist_cap1_neg": dad, "dist_cap2_neg": dpd},
+                        "similarities": {"cos_cap1_cap2": cos_ap, "cos_cap1_neg": cos_ad, "cos_cap2_neg": cos_pd},
+                        "anchor": anchor, "paraphrase": paraphrase, "distractor": distractor,
+                        "score_jaccard": scores_jaccard[i],
+                        "score_overlap": scores_overlap[i],
+                        "score_containment": scores_containment[i],
+                        "LO_ap": LO_ap, "LO_ad": LO_ad, "LO_pd": LO_pd,
+                        "LO_negmax": LO_negmax, "LOc": LOc
                     }, jsonl_file_writer)
                     jsonl_file_writer.write("\n")
 
-                # optional: per-layer plots
-                _ = analyze_and_save_distances(
-                    incorrect_pairs_by_layer[layer_key],
-                    correct_pairs_by_layer[layer_key],
-                    title_prefix=f"Counterfact_Layer_{layer_key}",
-                    out_dir=layer_dir,
-                    group_neg_name="Non-Paraphrase",
-                    group_pos_name="Paraphrase",
-                    neg_text_pairs=neg_pairs_by_layer[layer_key],
-                    pos_text_pairs=pos_pairs_by_layer[layer_key],
-                    neg_color="#2EA884",
-                    pos_color="#D7732D",
-                    hist_alpha=0.35,
-                    kde_linewidth=2.0,
-                    ecdf_linewidth=2.0,
-                    tau_color="#000000",
-                    tau_linestyle="--",
-                    tau_linewidth=1.5,
-                    violin_facealpha=0.35,
-                    box_facealpha=0.35,
-                )
+                # --- per-layer metric collectors ---
+                # intrasims_dict[layer_key].append(intrasim)
+                all_fail_flags_by_layer[layer_key].append(1 if failure else 0)
+                all_viols_by_layer[layer_key].append(max(0.0, -possible_margin_violation))
+                LO_anchor_paraphrase_list_by_layer[layer_key].append(LO_ap)
+                LO_anchor_distractor_list_by_layer[layer_key].append(LO_ad)
+                LO_paraphrase_distractor_list_by_layer[layer_key].append(LO_pd)
+                LO_negmax_list_by_layer[layer_key].append(LO_negmax)
+                LOc_list_by_layer[layer_key].append(LOc)
+                DISTc_list_by_layer[layer_key].append(possible_margin_violation)
 
-               
+                if (LOS_flag == "low"):
+                    if failure:
+                        jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
+                        signed_margins_by_layer[layer_key].append(possible_margin_violation)
+                        average_margin_violation_lor_low_by_layer[layer_key] += possible_margin_violation
+                        failure_rate_lor_low_by_layer[layer_key] += 1
+                    average_margin_lor_low_by_layer[layer_key] += possible_margin_violation
+                elif (LOS_flag == "high"):
+                    if failure:
+                        jaccard_scores_list_by_layer[layer_key].append(scores_jaccard[i])
+                        signed_margins_by_layer[layer_key].append(possible_margin_violation)
+                        average_margin_violation_lor_high_by_layer[layer_key] += possible_margin_violation
+                        failure_rate_lor_high_by_layer[layer_key] += 1
+                    average_margin_lor_high_by_layer[layer_key] += possible_margin_violation
 
-def gemma_counterfact_dime(data_loader,args,access_token,layers,device="auto",mode="pt"):
-    tokenizer,model = load_model(args.model_type,access_token,device=device)
+                if (dad <= dpd):
+                    incorrect_pairs_by_layer[layer_key].append(dad)
+                    neg_pairs_by_layer[layer_key].append((anchor, distractor))
+                else:
+                    incorrect_pairs_by_layer[layer_key].append(dpd)
+                    neg_pairs_by_layer[layer_key].append((paraphrase, distractor))
+
+                correct_pairs_by_layer[layer_key].append(dap)
+                pos_pairs_by_layer[layer_key].append((anchor, paraphrase))
+    process_and_write(args, layers, LO_negmax_list_by_layer, all_fail_flags_by_layer, LOc_list_by_layer, DISTc_list_by_layer, all_viols_by_layer, incorrect_pairs_by_layer, correct_pairs_by_layer, neg_pairs_by_layer, pos_pairs_by_layer)
+
+    
+
+
+
+
+
+
+# assumes you already have: load_model, build_batched_pt_inputs, nethook, mf
+
+def gemma_counterfact_dime(
+    data_loader,
+    args,
+    access_token,
+    layers,
+    device="auto",
+    mode="pt",
+    out_dir="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/",
+    smooth_k=3,      # moving-average window for CCP display; set to 1 to disable
+    eps=1e-8,        # small constant for CCP denominator
+):
+    model, tokenizer = get_model(args.model_type,access_token,device=device)
     model.eval()
+    # print(model)
     # Example: access specific fields
     
     embeddings_anchors=[]
     embeddings_paraphrases=[]
     embeddings_distractors=[]
-    l = layers
+
+    for batch in tqdm(data_loader, desc="Processing Rows"):
+
+        anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
+        anchor_sentence_embeddings,paraphrase_sentence_embeddings,distractor_sentence_embeddings = get_embeddings_pt(model,tokenizer,args, {"anchors": anchors, "paraphrases": paraphrases, "distractors": distractors}, layers, normalize=True, device=device)
     
-    with nethook.TraceDict(model, l) as ret:
-        with torch.no_grad():
-            for batch in tqdm(data_loader, desc="Processing Rows"):
+        embeddings_anchors.append(anchor_sentence_embeddings.detach().cpu())
+        embeddings_paraphrases.append(paraphrase_sentence_embeddings.detach().cpu())
+        embeddings_distractors.append(distractor_sentence_embeddings.detach().cpu())
+     
+    A = torch.cat(embeddings_anchors,     dim=1)  # [L, B_total, D]
+    P = torch.cat(embeddings_paraphrases, dim=1)  # [L, B_total, D]
+    D = torch.cat(embeddings_distractors, dim=1)  # [L, B_total, D]
+    A = torch.stack([mf.normalize(A[l]) for l in range(A.shape[0])])  # [L, N, D]
+    P = torch.stack([mf.normalize(P[l]) for l in range(P.shape[0])])  # [L, N, D]
+    D = torch.stack([mf.normalize(D[l]) for l in range(D.shape[0])])  # [L, N, D]
+    print(type(A), type(P), type(D))
+    print(A.shape, P.shape, D.shape)
+    print("A",A.unsqueeze(2).shape)
+    print("P",P.unsqueeze(2).shape)
+    print("D",D.unsqueeze(2).shape)
+    # Build the two view-pairs you want to compare:
+    # 1) [anchor, paraphrase]
+    L, B, Demb = A.shape
+    hidden_AP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+    hidden_AP[:, :, 0, :] = A
+    hidden_AP[:, :, 1, :] = P
+    print(hidden_AP.shape)
+    hidden_DA = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+    hidden_DA[:, :, 0, :] = A
+    hidden_DA[:, :, 1, :] = D
+    print(hidden_AP.shape)
+    hidden_DP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+    hidden_DP[:, :, 0, :] = P
+    hidden_DP[:, :, 1, :] = D
+    # Compute DiME for each pair (your compute_dime does the permute internally):
+    dime_DP = mf.compute_dime(hidden_DP, alpha=1.0, normalizations=['raw'])
+    print("hidden_DP.shape",dime_DP)
+    dime_AP = mf.compute_dime(hidden_AP, alpha=1.0, normalizations=['raw'])
+    dime_DA = mf.compute_dime(hidden_DA, alpha=1.0, normalizations=['raw'])
+    # dime_DP = mf.compute_dime(hidden_DP, alpha=1.0, normalizations=['raw'])
+    print("DIMES computed.")
+    ap = np.array(dime_AP['raw'])
+    ad = np.array(dime_DA['raw'])
+    pd = np.array(dime_DP['raw'])
+    layers = np.arange(len(ap))
+
+    # Save AP DiME as JSON (for your dCor tooling)
+    ap_dict = {str(int(i)): float(v) for i, v in enumerate(ap)}
+    ap_json_path = os.path.join(out_dir, f"{args.model_type}_dime_AP.json")
+    with open(ap_json_path, "w") as f:
+        json.dump(ap_dict, f)
+    print(f"[ok] wrote AP per-layer DiME (anchor–paraphrase) to {ap_json_path}")
+
+    # --- CCP ---
+    S, Lx = ap, ad
+    ccp = (S - Lx) / (S + Lx + eps)
+
+    def movavg(x, k=3):
+        if k <= 1: return x
+        pad = np.r_[x[0], x, x[-1]]
+        return np.convolve(pad, np.ones(k)/k, mode='same')[1:-1]
+
+    ccp_smooth = movavg(ccp, k=smooth_k)
+
+    # summarize ccp
+    peak_idx = int(np.argmax(ccp_smooth))
+    first_pos_idx = int(np.argmax(ccp_smooth > 0)) if np.any(ccp_smooth > 0) else None
+    print(f"[CCP] peak layer = {peak_idx}  value = {ccp_smooth[peak_idx]:.3f}")
+    if first_pos_idx is not None:
+        print(f"[CCP] first crossover layer = {first_pos_idx}  value = {ccp_smooth[first_pos_idx]:.3f}")
+    else:
+        print("[CCP] no positive crossover found")
+
+    eps = 1e-8
+    S = ap.astype(float)
+    Lx = ad.astype(float)
+
+    ccp_log = np.log((S + eps) / (Lx + eps))   # keeps rising when both grow but S grows faster
+
+
+    def participation_ratio(E_np: np.ndarray) -> float:
+        """
+        E_np: [N, D] row=example embedding. Returns PR/D in (0,1].
+        """
+        if E_np.shape[0] < 2:
+            return 0.0
+        C = np.cov(E_np.T, bias=False)
+        w = np.linalg.eigvalsh(C)
+        num = (w.sum())**2
+        den = (w**2).sum() + 1e-12
+        pr = num / den
+        return float(pr / E_np.shape[1])
+
+    # Build a small pool per layer using A, P, D (mean-pooled, already in your tensors)
+    # A, P, D are [L, N, D] torch -> stack to [N*3, D] per layer
+    
+
+    ccp_star = ccp_log  # isotropy-weighted
+
+
+    fig, ax1 = plt.subplots(figsize=(12,5))
+    l1, = ax1.plot(layers, ap, marker='o', label='DiME (anchor–paraphrase)')
+    l2, = ax1.plot(layers, ad, marker='o', label='DiME (anchor–distractor)')
+    # (optional) if you also have PD:
+    # l3, = ax1.plot(layers, dp, marker='o', label='DiME (paraphrase–distractor)')
+    ax1.set_xlabel("Layer"); ax1.set_ylabel("DiME (raw)")
+    ax1.grid(True, linestyle='--', alpha=0.4)
+
+    ax2 = ax1.twinx()
+    l4, = ax2.plot(layers, ccp_log, linewidth=2.2, label='log-CCP (S/L)')
+    # l5, = ax2.plot(layers, ccp_star, linewidth=2.2, linestyle='--', label='log-CCP × Isotropy')
+    ax2.axhline(0.0, color='gray', linestyle='--', linewidth=1)
+    ax2.set_ylabel("Contrast / Isotropy")
+
+    # Mark argmax layers
+    idx_log = int(np.argmax(ccp_log))
+    # idx_star = int(np.argmax(ccp_star))
+    ax2.scatter([idx_log], [ccp_log[idx_log]], s=50)
+    # ax2.scatter([idx_star], [ccp_star[idx_star]], s=50)
+    # title_marks = f"(peak log-CCP @ L{idx_log}, peak log-CCP×Iso @ L{idx_star})"
+    # plt.title("DiME per Layer with log-CCP overlays  " + title_marks)
+
+    # Merge legends
+    lines = [l1, l2, l4]  # add l3 if you plotted PD
+    labels = [ln.get_label() for ln in lines]
+    ax1.legend(lines, labels, loc='upper left')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, f"{args.model_type}_dime_layers_AP_vs_DA_logccp.png"), dpi=900)
+    # plt.show()
+
+    # ----------------------------
+    # 5) Export values for analysis
+    # ----------------------------
+    df_ccp = pd.DataFrame({
+        "layer": layers,
+        "DiME_AP": S,
+        "DiME_AD": Lx,
+        "log_CCP": ccp_log,
+        # "Isotropy": Iso,        "log_CCP_times_Iso": ccp_star
+    })
+    df_ccp.to_csv(os.path.join(out_dir, f"{args.model_type}_dime_logccp_iso.csv"), index=False)
+    print("[ok] saved overlays + CSV")
+    # print(f"Peak log-CCP layer: {idx_log}, Peak log-CCP×Iso layer: {idx_star}")
+
+    # --- Plot: DiME with CCP overlay (twin y-axis) ---
+    plt.figure(figsize=(10,5))
+    # left axis: DiME
+    ax1 = plt.gca()
+    line1, = ax1.plot(layers, ap, marker='o', label='DiME (anchor–paraphrase)')
+    line2, = ax1.plot(layers, ad, marker='o', label='DiME (anchor–distractor)')
+    line3, = ax1.plot(layers, pd, marker='o', label='DiME (paraphrase–distractor)')
+    ax1.set_xlabel("Layer")
+    ax1.set_ylabel("DiME (raw)")
+    ax1.grid(True, linestyle='--', alpha=0.5)
+
+    # right axis: CCP
+    ax2 = ax1.twinx()
+    line4, = ax2.plot(layers, ccp_smooth, linewidth=2.2, alpha=0.85, label='CCP (smoothed)')
+    ax2.axhline(0.0, color="gray", linestyle="--", linewidth=1)
+    ax2.set_ylabel("CCP")
+
+    # mark first crossover + peak on CCP
+    marks = []
+    if first_pos_idx is not None:
+        ax2.scatter([first_pos_idx], [ccp_smooth[first_pos_idx]], s=60, zorder=5)
+        marks.append(f"1st cross @ L{first_pos_idx}")
+    ax2.scatter([peak_idx], [ccp_smooth[peak_idx]], s=60, zorder=5)
+    marks.append(f"peak @ L{peak_idx}")
+
+    title_suffix = "  (" + ", ".join(marks) + ")"
+    plt.title("DiME per Layer with CCP overlay" + title_suffix)
+
+    # combine legends
+    lines = [line1, line2, line3, line4]
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc="upper left")
+
+    plt.tight_layout()
+    dime_ccp_png = os.path.join(out_dir, f"{args.model_type}_dime_layers_AP_vs_DA.png")
+    plt.savefig(dime_ccp_png, dpi=1000)
+    print(f"[ok] saved figure with CCP overlay to {dime_ccp_png}")
+
+    # --- Optional: standalone CCP plot ---
+    plt.figure(figsize=(10,4))
+    plt.plot(layers, ccp_smooth, label="CCP (smoothed)")
+    plt.plot(layers, ccp, alpha=0.35, linewidth=1, label="CCP (raw)")
+    plt.axhline(0.0, color="gray", linestyle="--", linewidth=1)
+    if first_pos_idx is not None:
+        plt.scatter([first_pos_idx], [ccp_smooth[first_pos_idx]], s=60)
+        plt.text(first_pos_idx, ccp_smooth[first_pos_idx], " 1st cross", va="bottom")
+    plt.scatter([peak_idx], [ccp_smooth[peak_idx]], s=60)
+    plt.text(peak_idx, ccp_smooth[peak_idx], " peak", va="bottom")
+    plt.title("CCP across layers")
+    plt.xlabel("Layer")
+    plt.ylabel("CCP = (DiME(AP) - DiME(AD)) / (DiME(AP)+DiME(AD))")
+    plt.legend(loc="best")
+    plt.grid(True, linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    ccp_png = os.path.join(out_dir, f"{args.model_type}_ccp_layers.png")
+    plt.savefig(ccp_png, dpi=600)
+    print(f"[ok] saved CCP-only figure to {ccp_png}")
+
+    # # Return arrays for any downstream analysis
+    # return {
+    #     "layers": layers_idx,
+    #     "dime_AP": ap,
+    #     "dime_AD": ad,
+    #     "dime_PD": pd,
+    #     "ccp": ccp,
+    #     "ccp_smooth": ccp_smooth,
+    #     "peak_layer": peak_idx,
+    #     "first_crossover_layer": first_pos_idx,
+    #     "csv_path": ccp_csv,
+    #     "fig_path_dime_ccp": dime_ccp_png,
+    #     "fig_path_ccp": ccp_png,
+    # }
+
+# def gemma_counterfact_dime(data_loader,args,access_token,layers,device="auto",mode="pt"):
+#     tokenizer,model = load_model(args.model_type,access_token,device=device)
+#     model.eval()
+#     # Example: access specific fields
+    
+#     embeddings_anchors=[]
+#     embeddings_paraphrases=[]
+#     embeddings_distractors=[]
+#     l = layers
+    
+#     with nethook.TraceDict(model, l) as ret:
+#         with torch.no_grad():
+#             for batch in tqdm(data_loader, desc="Processing Rows"):
    
-                anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
+#                 anchors, paraphrases, distractors = batch["anchor"], batch["paraphrase"], batch["distractor"]
             
               
-                inputs = build_batched_pt_inputs(tokenizer, anchors, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
+#                 inputs = build_batched_pt_inputs(tokenizer, anchors, device=device)
+#                 _ = model(
+#                     input_ids=inputs["input_ids"],
+#                     attention_mask=inputs["attention_mask"],
+#                     output_hidden_states=True
+#                 ) 
+#                 anchor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+#                 mask = inputs["attention_mask"].unsqueeze(-1)
                 
-                padded_zero_embeddings=anchor_sentence_embeddings * mask
-                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                lengths = mask.sum(dim=1)                                  # (B, L, 1)
-                anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+#                 padded_zero_embeddings=anchor_sentence_embeddings * mask
+#                 sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+#                 lengths = mask.sum(dim=1)                                  # (B, L, 1)
+#                 anchor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
                  
-                inputs = build_batched_pt_inputs(tokenizer, paraphrases, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                paraphrase_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
-                padded_zero_embeddings=paraphrase_sentence_embeddings * mask
-                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
-                paraphrase_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
-                inputs = build_batched_pt_inputs(tokenizer, distractors, device=device)
-                _ = model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs["attention_mask"],
-                    output_hidden_states=True
-                ) 
-                distractor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
-                mask = inputs["attention_mask"].unsqueeze(-1)
+#                 inputs = build_batched_pt_inputs(tokenizer, paraphrases, device=device)
+#                 _ = model(
+#                     input_ids=inputs["input_ids"],
+#                     attention_mask=inputs["attention_mask"],
+#                     output_hidden_states=True
+#                 ) 
+#                 paraphrase_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+#                 mask = inputs["attention_mask"].unsqueeze(-1)
+#                 padded_zero_embeddings=paraphrase_sentence_embeddings * mask
+#                 sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+#                 lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
+#                 paraphrase_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+#                 inputs = build_batched_pt_inputs(tokenizer, distractors, device=device)
+#                 _ = model(
+#                     input_ids=inputs["input_ids"],
+#                     attention_mask=inputs["attention_mask"],
+#                     output_hidden_states=True
+#                 ) 
+#                 distractor_sentence_embeddings = torch.stack([ret[layer_key].output[0] for layer_key in ret],dim=0)
+#                 mask = inputs["attention_mask"].unsqueeze(-1)
               
-                padded_zero_embeddings=distractor_sentence_embeddings * mask
-                sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
-                lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
-                distractor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
+#                 padded_zero_embeddings=distractor_sentence_embeddings * mask
+#                 sum_hidden = padded_zero_embeddings.sum(dim=2)                # (B, L,H)
+#                 lengths = mask.sum(dim=1)                                     # (B, ,L, 1)
+#                 distractor_sentence_embeddings = sum_hidden / lengths.clamp(min=1)
 
             
-                embeddings_anchors.append(anchor_sentence_embeddings.detach().cpu())
-                embeddings_paraphrases.append(paraphrase_sentence_embeddings.detach().cpu())
-                embeddings_distractors.append(distractor_sentence_embeddings.detach().cpu())
+#                 embeddings_anchors.append(anchor_sentence_embeddings.detach().cpu())
+#                 embeddings_paraphrases.append(paraphrase_sentence_embeddings.detach().cpu())
+#                 embeddings_distractors.append(distractor_sentence_embeddings.detach().cpu())
 
                 
                 
-        A = torch.cat(embeddings_anchors,     dim=1)  # [L, B_total, D]
-        P = torch.cat(embeddings_paraphrases, dim=1)  # [L, B_total, D]
-        D = torch.cat(embeddings_distractors, dim=1)  # [L, B_total, D]
-        A = torch.stack([mf.normalize(A[l]) for l in range(A.shape[0])])  # [L, N, D]
-        P = torch.stack([mf.normalize(P[l]) for l in range(P.shape[0])])  # [L, N, D]
-        D = torch.stack([mf.normalize(D[l]) for l in range(D.shape[0])])  # [L, N, D]
-        print(type(A), type(P), type(D))
-        print(A.shape, P.shape, D.shape)
-        print("A",A.unsqueeze(2).shape)
-        print("P",P.unsqueeze(2).shape)
-        print("D",D.unsqueeze(2).shape)
-        # Build the two view-pairs you want to compare:
-        # 1) [anchor, paraphrase]
-        L, B, Demb = A.shape
-        hidden_AP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
-        hidden_AP[:, :, 0, :] = A
-        hidden_AP[:, :, 1, :] = P
-        print(hidden_AP.shape)
-        hidden_DA = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
-        hidden_DA[:, :, 0, :] = A
-        hidden_DA[:, :, 1, :] = D
-        print(hidden_AP.shape)
-        hidden_DP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
-        hidden_DP[:, :, 0, :] = P
-        hidden_DP[:, :, 1, :] = D
-        # Compute DiME for each pair (your compute_dime does the permute internally):
-        dime_AP = mf.compute_dime(hidden_AP, alpha=1.0, normalizations=['raw'])
-        dime_DA = mf.compute_dime(hidden_DA, alpha=1.0, normalizations=['raw'])
-        dime_DP = mf.compute_dime(hidden_DP, alpha=1.0, normalizations=['raw'])
-        print("DIMES computed.")
-        ap = np.array(dime_AP['raw'])
-        da = np.array(dime_DA['raw'])
-        dp = np.array(dime_DP['raw'])
-        layers = np.arange(len(ap))
+#         A = torch.cat(embeddings_anchors,     dim=1)  # [L, B_total, D]
+#         P = torch.cat(embeddings_paraphrases, dim=1)  # [L, B_total, D]
+#         D = torch.cat(embeddings_distractors, dim=1)  # [L, B_total, D]
+#         A = torch.stack([mf.normalize(A[l]) for l in range(A.shape[0])])  # [L, N, D]
+#         P = torch.stack([mf.normalize(P[l]) for l in range(P.shape[0])])  # [L, N, D]
+#         D = torch.stack([mf.normalize(D[l]) for l in range(D.shape[0])])  # [L, N, D]
+#         print(type(A), type(P), type(D))
+#         print(A.shape, P.shape, D.shape)
+#         print("A",A.unsqueeze(2).shape)
+#         print("P",P.unsqueeze(2).shape)
+#         print("D",D.unsqueeze(2).shape)
+#         # Build the two view-pairs you want to compare:
+#         # 1) [anchor, paraphrase]
+#         L, B, Demb = A.shape
+#         hidden_AP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+#         hidden_AP[:, :, 0, :] = A
+#         hidden_AP[:, :, 1, :] = P
+#         print(hidden_AP.shape)
+#         hidden_DA = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+#         hidden_DA[:, :, 0, :] = A
+#         hidden_DA[:, :, 1, :] = D
+#         print(hidden_AP.shape)
+#         hidden_DP = torch.empty((L, B, 2, Demb), dtype=A.dtype, device=A.device)
+#         hidden_DP[:, :, 0, :] = P
+#         hidden_DP[:, :, 1, :] = D
+#         # Compute DiME for each pair (your compute_dime does the permute internally):
+#         dime_AP = mf.compute_dime(hidden_AP, alpha=1.0, normalizations=['raw'])
+#         dime_DA = mf.compute_dime(hidden_DA, alpha=1.0, normalizations=['raw'])
+#         dime_DP = mf.compute_dime(hidden_DP, alpha=1.0, normalizations=['raw'])
+#         print("DIMES computed.")
+#         ap = np.array(dime_AP['raw'])
+#         da = np.array(dime_DA['raw'])
+#         dp = np.array(dime_DP['raw'])
+#         layers = np.arange(len(ap))
 
-        #############################################
-        # SAVE 'ap' IN dCor-COMPATIBLE FORMAT
-        #############################################
+#         #############################################
+#         # SAVE 'ap' IN dCor-COMPATIBLE FORMAT
+#         #############################################
 
-        # Build { "0": <ap_at_layer_0>, "1": <ap_at_layer_1>, ... }
-        ap_dict = {
-            str(int(layer_idx)): float(val)
-            for layer_idx, val in enumerate(ap)
-        }
+#         # Build { "0": <ap_at_layer_0>, "1": <ap_at_layer_1>, ... }
+#         ap_dict = {
+#             str(int(layer_idx)): float(val)
+#             for layer_idx, val in enumerate(ap)
+#         }
 
-        out_dir = "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/"
-        os.makedirs(out_dir, exist_ok=True)
+#         out_dir = "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/"
+#         os.makedirs(out_dir, exist_ok=True)
 
-        ap_json_path = os.path.join(
-            out_dir,
-            f"{args.model_type}_dime_AP.json"  # <-- this is what you'll feed into dCor code
-        )
+#         ap_json_path = os.path.join(
+#             out_dir,
+#             f"{args.model_type}_dime_AP.json"  # <-- this is what you'll feed into dCor code
+#         )
 
-        with open(ap_json_path, "w") as f:
-            json.dump(ap_dict, f)  # no indent needed for loading
+#         with open(ap_json_path, "w") as f:
+#             json.dump(ap_dict, f)  # no indent needed for loading
 
-        print(f"[ok] wrote AP per-layer DiME (anchor–paraphrase) to {ap_json_path}")
-#############################################
+#         print(f"[ok] wrote AP per-layer DiME (anchor–paraphrase) to {ap_json_path}")
+# #############################################
 
 
-        plt.figure(figsize=(10,5))
-        plt.plot(layers, ap, marker='o', label='DiME (anchor–paraphrase)')
-        plt.plot(layers, da, marker='o', label='DiME (anchor–distractor)')
-        plt.plot(layers, dp, marker='o', label='DiME (paraphrase–distractor)')
-        plt.xlabel("Layer")
-        plt.ylabel("DiME (raw)")
-        plt.title("DiME per Layer")
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.5)
-        plt.tight_layout()
-        plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_dime_layers_AP_vs_DA.png", dpi=1000)
-        # plt.show()
+#         plt.figure(figsize=(10,5))
+#         plt.plot(layers, ap, marker='o', label='DiME (anchor–paraphrase)')
+#         plt.plot(layers, da, marker='o', label='DiME (anchor–distractor)')
+#         plt.plot(layers, dp, marker='o', label='DiME (paraphrase–distractor)')
+#         plt.xlabel("Layer")
+#         plt.ylabel("DiME (raw)")
+#         plt.title("DiME per Layer")
+#         plt.legend()
+#         plt.grid(True, linestyle='--', alpha=0.5)
+#         plt.tight_layout()
+#         plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_dime_layers_AP_vs_DA.png", dpi=1000)
+#         # plt.show()
 
         
-        InfoNCE_AP = mf.compute_infonce(hidden_AP)
-        InfoNCE_DA = mf.compute_infonce(hidden_DA)
-        InfoNCE_DP = mf.compute_infonce(hidden_DP)
-        print("DIMES computed.")
-        ap = np.array(InfoNCE_AP['raw'])
-        da = np.array(InfoNCE_DA['raw'])
-        dp = np.array(InfoNCE_DP['raw'])
-        layers = np.arange(len(ap))
+#         InfoNCE_AP = mf.compute_infonce(hidden_AP)
+#         InfoNCE_DA = mf.compute_infonce(hidden_DA)
+#         InfoNCE_DP = mf.compute_infonce(hidden_DP)
+#         print("DIMES computed.")
+#         ap = np.array(InfoNCE_AP['raw'])
+#         da = np.array(InfoNCE_DA['raw'])
+#         dp = np.array(InfoNCE_DP['raw'])
+#         layers = np.arange(len(ap))
 
-        plt.figure(figsize=(10,5))
-        plt.plot(layers, ap, marker='o', label='InfoNCE (anchor–paraphrase)')
-        plt.plot(layers, da, marker='o', label='InfoNCE (anchor–distractor)')
-        plt.plot(layers, dp, marker='o', label='InfoNCE (paraphrase–distractor)')
-        plt.xlabel("Layer")
-        plt.ylabel("InfoNCE (raw)")
-        plt.title("InfoNCE per Layer")
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.5)
-        plt.tight_layout()
-        plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_InfoNCE_layers_AP_vs_DA.png", dpi=1000)
+#         plt.figure(figsize=(10,5))
+#         plt.plot(layers, ap, marker='o', label='InfoNCE (anchor–paraphrase)')
+#         plt.plot(layers, da, marker='o', label='InfoNCE (anchor–distractor)')
+#         plt.plot(layers, dp, marker='o', label='InfoNCE (paraphrase–distractor)')
+#         plt.xlabel("Layer")
+#         plt.ylabel("InfoNCE (raw)")
+#         plt.title("InfoNCE per Layer")
+#         plt.legend()
+#         plt.grid(True, linestyle='--', alpha=0.5)
+#         plt.tight_layout()
+#         plt.savefig(f"/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/dime_figures/{args.model_type}_InfoNCE_layers_AP_vs_DA.png", dpi=1000)
 
 
 # def gemma_test_direct_counterfact_easyedit(file_path,model,file_save_path,tokenizer,device):
@@ -1398,4 +1129,41 @@ def gemma_counterfact_dime(data_loader,args,access_token,layers,device="auto",mo
 #                     #     print("⚠️ A locality vector is closer to the edit than any paraphrase (Euclidean).",data_entry["edited_prompt"][0],paraphrase_strings[j],locality_strings[i])
 #                     counter+=1
 #                 # break
+# def compute_intra_sentence_similarity(embeddings, mask, mean_norm, eps=1e-12,average_over_batch=False):
+#     """
+#     Compute IntraSimᶩ(s) = (1/n) Σ_i cos(~sᶩ, fᶩ(s,i))
+#     for each layer and batch.
 
+#     Args:
+#         embeddings: Tensor [L, B, T, H]
+#             Layerwise token embeddings.
+#         mask: Tensor [B, T, 1]
+#             1 for valid tokens, 0 for padding.
+#         mean_norm: Tensor [L, B, H]
+#             Normalized mean embedding per layer and batch.
+#         eps: float
+#             Small epsilon for numerical stability.
+
+#     Returns:
+#         intra_sim: Tensor [L, B]
+#             Intra-sentence similarity per layer and batch.
+#     """
+#      # Normalize token embeddings (safe even with zeroed padding)
+#     emb_norm = embeddings / embeddings.norm(dim=-1, keepdim=True).clamp_min(eps)  # [L, B, T, H]
+
+#     # Expand mean embedding to match token dimension
+#     mean_norm_exp = mean_norm.unsqueeze(2)  # [L, B, 1, H]
+
+#     # Cosine similarities for each token
+#     cos_sim = (emb_norm * mean_norm_exp).sum(dim=-1)  # [L, B, T]
+
+#     # Average across valid tokens
+#     valid_counts = mask.squeeze(-1).sum(dim=1, keepdim=True).clamp(min=1)  # [B, 1]
+#     print("valid_counts",valid_counts.transpose(0, 1))
+#     intra_sim = cos_sim.sum(dim=2) / valid_counts.transpose(0, 1)  # [L, B]
+#     print("intra_sim",intra_sim)
+#     # Optionally average across batch
+#     if average_over_batch:
+#         intra_sim = intra_sim.mean(dim=1)  # [L]
+
+#     return intra_sim

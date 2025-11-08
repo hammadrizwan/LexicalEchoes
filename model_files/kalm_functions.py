@@ -1,4 +1,4 @@
-from sentence_transformers import SentenceTransformer
+
 import nethook
 import linecache
 import torch.nn.functional as F
@@ -9,18 +9,16 @@ from helper_functions import _counts, _jaccard_overlap_pct
 dir_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(dir_path+"/")#add to load modules
 from scipy.stats import spearmanr
-from visualization_quora_paws import analyze_and_save_distances
+from visualizations import analyze_and_save_distances
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
-def load_model(device="auto"):
-    model = SentenceTransformer('HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5').to(device)
-    return model
+from model_loaders import get_model
 # Tokenize the input texts
 
 
 
 def kalm_counterfact_scpp(data_loader,args,device="auto"):
-    model = load_model(device)
+    model = get_model(args.model_type, device)
     model.eval()
     # Example: access specific fields
     

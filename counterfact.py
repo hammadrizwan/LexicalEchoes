@@ -31,23 +31,23 @@ import statistics
 # from model_files.gemma_functions import gemma_test_direct_counterfact_easyedit
 from get_token import *
 
-LAYER_TEMPLATE_DICT={"gemma-3-1b-pt":["model.layers.{}"],"gemma-3-4b-pt":["model.language_model.layers.{}"],"gemma-3-12b-pt":["model.language_model.layers.{}"],
-                    "gemma-3-1b-it":["model.layers.{}"],"gemma-3-4b-it":["model.language_model.layers.{}"],"gemma-3-12b-it":["model.language_model.layers.{}"],
-                    "Llama-3.2-1B":["model.layers.{}"],"Llama-3.2-1B-Instruct":["model.layers.{}"],"Llama-3.2-3B":["model.layers.{}"],"Llama-3.2-3B-Instruct":["model.layers.{}"],
-                    "qwen":["layers.{}"]
+LAYER_TEMPLATE_DICT={"google/gemma-3-1b-pt":["model.layers.{}"],"google/gemma-3-4b-pt":["model.language_model.layers.{}"],"google/gemma-3-12b-pt":["model.language_model.layers.{}"],
+                    "google/gemma-3-1b-it":["model.layers.{}"],"google/gemma-3-4b-it":["model.language_model.layers.{}"],"google/gemma-3-12b-it":["model.language_model.layers.{}"],
+                    "meta-llama/Llama-3.2-1B":["model.layers.{}"],"meta-llama/Llama-3.2-1B-Instruct":["model.layers.{}"],"meta-llama/Llama-3.2-3B":["model.layers.{}"],"meta-llama/Llama-3.2-3B-Instruct":["model.layers.{}"],
+                    "qwen":["layers.{}"]#add the other models and fix qwen
                     }
 
-LAYER_MAPPING_DICT={"Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
-                    "Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
-                    "Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-                    "Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-                    "gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
-                    "gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
-                    "gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
-                    "gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
-                    "gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
-                    "gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
-                    "qwen":[33,34,35]
+LAYER_MAPPING_DICT={"meta-llama/Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "meta-llama/Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "google/gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "google/gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "qwen":[33,34,35]#fix
                     }
                     
 
@@ -58,11 +58,6 @@ ACCESS_TOKEN=get_token()
 # Section: Counterfact Dataset from EasyEdit
 #----------------------------------------------------------------------------
 # region CounterFactDatasetEasyEdit
-
-
-
-
-
 
 # def robust_quantile_threshold(scores, target_high_frac=0.5):
 #     """
@@ -163,7 +158,7 @@ class CounterFactDatasetPenme(Dataset):
         score_jaccard_list=[]
         score_containment_list=[]
         score_overlap_list=[]
-        for row in dataset:
+        for row in dataset[:1000]:
             anchor=row["edited_prompt"][0]
             distractor_list=[]
             distractor_list.extend(row["neighborhood_prompts_high_sim"])
@@ -377,8 +372,8 @@ def get_args():
         type=str,
         default="qwen",
         choices=["kalm","e5","qwen","promptriever"
-                 , "gemma-3-1b-pt","gemma-3-4b-pt","gemma-3-12b-pt","gemma-3-1b-it","gemma-3-4b-it","gemma-3-12b-it",
-                 "Llama-3.2-1B","Llama-3.2-3B","Llama-3.2-1B-Instruct","Llama-3.2-3B-Instruct","llama"],
+                 , "google/gemma-3-1b-pt","google/gemma-3-4b-pt","google/gemma-3-12b-pt","google/gemma-3-1b-it","google/gemma-3-4b-it","google/gemma-3-12b-it",
+                 "meta-llama/Llama-3.2-1B","meta-llama/Llama-3.2-3B","meta-llama/Llama-3.2-1B-Instruct","meta-llama/Llama-3.2-3B-Instruct"],
         help="Type of model to use for embeddings"
     )
 
@@ -419,102 +414,8 @@ def get_args():
 
     args = parser.parse_args()
     return args
+#----------------------------------------------------------------------------
 
-
-# Auto Loading
-
-
-def generate_response(prompt, tokenizer, model, max_new_tokens=200):
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens)
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-
-# def gemma(device):
-#     model_name = "google/gemma-7b-it"
-    
-    
-#     # GemmaForCausalLM
-#     #     └── model (GemmaModel)
-#     #         └── embed_tokens
-#     #         └── layers (ModuleList)
-#     #             └── [i] (GemmaDecoderLayer)
-#     #                 └── self_attn (GemmaAttention)
-#     #                     └── q_proj / k_proj / v_proj / o_proj
-#     #                 └── mlp (GemmaMLP)
-#     #                     └── gate_proj / up_proj / down_proj / act_fn
-#     #                 └── input_layernorm
-#     #                 └── post_attention_layernorm
-#     #         └── norm
-#     #         └── rotary_emb
-#     #     └── lm_head
-
-#     # prompt = "Explain the theory of relativity in simple terms."
-#     print("Loading model...")
-#     tokenizer, model = load_model(model_name,acess_token_gemma)
-#     print("Model loaded.",model)
-#     # print("Generating response...")
-#     # response = generate_response(prompt, tokenizer, model)
-#     # print("Run Embeddigs Analysis Counterfact...")
-    
-#     # file_save_path="./counterfact_gemma_lexical_bias_violations_lasttoken.jsonl"
-#     # gemma_embeddings_analysis_counterfact_lasttoken(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")
-#     file_save_path="./counterfact_easyedit_gemma_lexical_bias_violations_average.jsonl"
-#     gemma_test_direct_counterfact_easyedit(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device=device)  
-    # print("\n=== Model Output ===")
-    # print(response)
-# def llama():
-#     model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-#     # LlamaForCausalLM
-#         # └── model (LlamaModel)
-#         #     ├── embed_tokens (Embedding)
-#         #     ├── layers (ModuleList)
-#         #     │   └── [i] (LlamaDecoderLayer)
-#         #     │       ├── self_attn (LlamaAttention)
-#         #     │       │   ├── q_proj (Linear)
-#         #     │       │   ├── k_proj (Linear)
-#         #     │       │   ├── v_proj (Linear)
-#         #     │       │   └── o_proj (Linear)
-#         #     │       ├── mlp (LlamaMLP)
-#         #     │       │   ├── gate_proj (Linear)
-#         #     │       │   ├── up_proj (Linear)
-#         #     │       │   ├── down_proj (Linear)
-#         #     │       │   └── act_fn (SiLU)
-#         #     │       ├── input_layernorm (LlamaRMSNorm)
-#         #     │       └── post_attention_layernorm (LlamaRMSNorm)
-#         #     ├── norm (LlamaRMSNorm)
-#         #     └── rotary_emb (LlamaRotaryEmbedding)
-#         # └── lm_head (Linear)
-
-#     acess_token_gemma= "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"
-#     # prompt = "Explain the theory of relativity in simple terms."
-#     print("Loading model...")
-#     tokenizer, model = load_model(model_name,acess_token_gemma)
-#     # print("Model loaded.",model)
-#     # print("Generating response...")
-#     # response = generate_response(prompt, tokenizer, model)
-#     # print("Run Embeddigs Analysis Counterfact...")
-#     file_path_counterfact="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/Counterfact_OpenAI.jsonl"
-#     file_save_path="./counterfact_llama_lexical_bias_violations_lasttoken.jsonl"
-#     llama_embeddings_analysis_counterfact_lasttoken(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")
-#     file_save_path="./counterfact_llama_lexical_bias_violations_average.jsonl"
-#     llama_embeddings_analysis_counterfact_average(file_path=file_path_counterfact,model=model,tokenizer=tokenizer,file_save_path=file_save_path,device="cuda:0")  
-#     # print("\n=== Model Output ===")
-#     # print(response)
-
-# def qwen(device):
-#     model = SentenceTransformer("Qwen/Qwen3-Embedding-8B").to(device)
-#     # queries = [
-#     # "Angola is located in",
-#     # ]
-#     # documents = [
-#     #     "Mozambique is in",
-#     #     "Angola is a part of the continent of",
-#     # ]
-#     file_path_counterfact="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/counterfact/counterfact_easyedit/counterfact-train.json"
-#     file_save_path="./counterfact_analysis/counterfact_easyedit_qwen_lexical_bias_direct.jsonl"
-#     qwen_test_direct_counterfact_easyedit(file_path=file_path_counterfact,model=model,file_save_path=file_save_path,device=device)
 
 
 if __name__ == "__main__":

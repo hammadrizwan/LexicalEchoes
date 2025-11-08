@@ -10,7 +10,7 @@ dir_path = os.path.dirname(os.path.abspath(__file__))
 # print(dir_path)
 sys.path.append(dir_path+"/")#add to load modules
 from helper_functions import apply_whitening_batch,bootstrap_ci_spearman,bootstrap_ci_los_q1q4,_jaccard_overlap_pct,_counts
-from visualization_quora_paws import analyze_and_save_distances
+from visualizations import analyze_and_save_distances
 import math
 import numpy as np
 from scipy.stats import spearmanr
@@ -20,17 +20,11 @@ from torch import Tensor
 
 
 
-def load_model_sentence_transformer(device):
-    return SentenceTransformer("Qwen/Qwen3-Embedding-8B").to(device)
-def get_model_hugging_face(device):
-    
-    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3-Embedding-8B', padding_side='left')
-    model = AutoModel.from_pretrained('Qwen/Qwen3-Embedding-8B').to(device)
-    return tokenizer, model
 #----------------------------------------------------------------------------
 # Section: Qwen Direct Embeddings
 #----------------------------------------------------------------------------
 # region Qwen Direct Embeddings
+# CONVERT THIS CODE TO HUGGING FACE VERSION
 def qwen_get_embeddings(model, inputs, normalize=False):
     with torch.no_grad():
         if(len(inputs)==1):

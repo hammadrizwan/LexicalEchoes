@@ -33,3 +33,5 @@ figures_entropy/
 counterfact_analysis/
 figures_scpp/
 dime_figures/
+SEM/sem_lens_ckpt/
+LEX_Affine/revlexlens_ckpt/

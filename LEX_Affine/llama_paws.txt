@@ -1,0 +1,266 @@
+Current working directory: /home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/LEX_Affine
+Starting run at: Fri 07 Nov 2025 01:36:14 AM UTC
+
+Job Array ID / Job ID:  / 157519
+This is job  out of  jobs.
+
+
+The following have been reloaded with a version change:
+  1) python-build-bundle/2025a => python-build-bundle/2024a
+
+/home/hrk21/.local/lib/python3.11/site-packages/transformers/utils/hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:04<00:17,  4.36s/it]Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:09,  3.24s/it]Loading checkpoint shards:  60%|██████    | 3/5 [00:09<00:05,  2.90s/it]Loading checkpoint shards:  80%|████████  | 4/5 [00:11<00:02,  2.71s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.56s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.80s/it]
+Data Loaded
+Starting training of Reverse Lexical Lens
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+/gpfs/project/6075961/hrk21/LexicalBias/Lexical_Semantic_Quantification/LEX_Affine/lex.py:338: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /tmp/build_wheels_tmp.6038/python-3.11/torch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  f"ep {ep} step {step_idx} loss {float(total_loss):.4f} "
+ep 0 step 0 loss 576.8469 ce_layer_1:11.559 ce_layer_2:11.724 ce_layer_3:11.845 ce_layer_4:11.755 ce_layer_5:11.993 ce_layer_6:12.094 ce_layer_7:12.104 ce_layer_8:12.245 ce_layer_9:12.344 ce_layer_10:12.361 ce_layer_11:12.442 ce_layer_12:12.431 ce_layer_13:12.448 ce_layer_14:12.485 ce_layer_15:12.507 ce_layer_16:12.514 ce_layer_17:12.523 ce_layer_18:12.527 ce_layer_19:12.523 ce_layer_20:12.517 ce_layer_21:12.517 ce_layer_22:12.517 ce_layer_23:12.523 ce_layer_24:12.501 ce_layer_25:12.497 ce_layer_26:12.491 ce_layer_27:12.479 ce_layer_28:12.461 ce_layer_29:12.469 ce_layer_30:12.339 ce_layer_31:12.330 ce_layer_32:12.308 ce_layer_33:12.293 ce_layer_34:12.290 ce_layer_35:12.332 ce_layer_36:12.065 ce_layer_37:12.054 ce_layer_38:12.085 ce_layer_39:12.122 ce_layer_40:12.171 ce_layer_41:12.209 ce_layer_42:12.041 ce_layer_43:12.098 ce_layer_44:12.134 ce_layer_45:12.165 ce_layer_46:12.185 ce_layer_47:12.226
+ep 0 step 50 loss 251.4670 ce_layer_1:2.654 ce_layer_2:2.784 ce_layer_3:3.066 ce_layer_4:2.581 ce_layer_5:3.126 ce_layer_6:3.836 ce_layer_7:3.232 ce_layer_8:3.900 ce_layer_9:4.729 ce_layer_10:4.710 ce_layer_11:5.679 ce_layer_12:5.437 ce_layer_13:5.581 ce_layer_14:6.330 ce_layer_15:6.736 ce_layer_16:6.952 ce_layer_17:7.121 ce_layer_18:7.000 ce_layer_19:7.038 ce_layer_20:7.013 ce_layer_21:7.078 ce_layer_22:7.143 ce_layer_23:7.204 ce_layer_24:7.021 ce_layer_25:6.933 ce_layer_26:6.799 ce_layer_27:6.495 ce_layer_28:6.161 ce_layer_29:6.177 ce_layer_30:5.532 ce_layer_31:5.447 ce_layer_32:5.316 ce_layer_33:5.139 ce_layer_34:5.107 ce_layer_35:5.196 ce_layer_36:4.550 ce_layer_37:4.538 ce_layer_38:4.645 ce_layer_39:4.772 ce_layer_40:4.925 ce_layer_41:5.135 ce_layer_42:4.782 ce_layer_43:4.902 ce_layer_44:5.045 ce_layer_45:5.171 ce_layer_46:5.286 ce_layer_47:5.467
+ep 0 step 100 loss 211.9032 ce_layer_1:2.208 ce_layer_2:2.279 ce_layer_3:2.470 ce_layer_4:2.320 ce_layer_5:2.643 ce_layer_6:2.931 ce_layer_7:2.720 ce_layer_8:3.255 ce_layer_9:3.937 ce_layer_10:3.908 ce_layer_11:4.806 ce_layer_12:4.617 ce_layer_13:4.760 ce_layer_14:5.646 ce_layer_15:6.124 ce_layer_16:6.379 ce_layer_17:6.598 ce_layer_18:6.602 ce_layer_19:6.738 ce_layer_20:6.703 ce_layer_21:6.813 ce_layer_22:6.933 ce_layer_23:6.990 ce_layer_24:6.790 ce_layer_25:6.625 ce_layer_26:6.392 ce_layer_27:5.932 ce_layer_28:5.381 ce_layer_29:5.453 ce_layer_30:4.416 ce_layer_31:4.244 ce_layer_32:4.033 ce_layer_33:3.742 ce_layer_34:3.732 ce_layer_35:3.870 ce_layer_36:3.205 ce_layer_37:3.181 ce_layer_38:3.295 ce_layer_39:3.455 ce_layer_40:3.654 ce_layer_41:3.866 ce_layer_42:3.294 ce_layer_43:3.462 ce_layer_44:3.621 ce_layer_45:3.717 ce_layer_46:3.901 ce_layer_47:4.261
+ep 0 step 150 loss 173.0039 ce_layer_1:1.604 ce_layer_2:1.658 ce_layer_3:1.913 ce_layer_4:1.807 ce_layer_5:1.969 ce_layer_6:2.253 ce_layer_7:1.959 ce_layer_8:2.373 ce_layer_9:3.081 ce_layer_10:3.083 ce_layer_11:3.927 ce_layer_12:3.717 ce_layer_13:3.897 ce_layer_14:4.820 ce_layer_15:5.393 ce_layer_16:5.630 ce_layer_17:5.900 ce_layer_18:5.839 ce_layer_19:5.987 ce_layer_20:5.949 ce_layer_21:6.087 ce_layer_22:6.263 ce_layer_23:6.406 ce_layer_24:6.028 ce_layer_25:5.828 ce_layer_26:5.503 ce_layer_27:4.858 ce_layer_28:4.284 ce_layer_29:4.317 ce_layer_30:3.413 ce_layer_31:3.228 ce_layer_32:3.019 ce_layer_33:2.954 ce_layer_34:2.947 ce_layer_35:2.826 ce_layer_36:2.368 ce_layer_37:2.369 ce_layer_38:2.444 ce_layer_39:2.527 ce_layer_40:2.655 ce_layer_41:2.824 ce_layer_42:2.467 ce_layer_43:2.641 ce_layer_44:2.783 ce_layer_45:2.914 ce_layer_46:3.028 ce_layer_47:3.262
+ep 0 step 200 loss 170.5717 ce_layer_1:1.615 ce_layer_2:1.687 ce_layer_3:2.048 ce_layer_4:1.930 ce_layer_5:2.048 ce_layer_6:2.212 ce_layer_7:2.071 ce_layer_8:2.339 ce_layer_9:2.944 ce_layer_10:2.949 ce_layer_11:3.670 ce_layer_12:3.497 ce_layer_13:3.675 ce_layer_14:4.522 ce_layer_15:5.112 ce_layer_16:5.428 ce_layer_17:5.651 ce_layer_18:5.514 ce_layer_19:5.656 ce_layer_20:5.658 ce_layer_21:5.913 ce_layer_22:6.058 ce_layer_23:6.206 ce_layer_24:5.766 ce_layer_25:5.565 ce_layer_26:5.219 ce_layer_27:4.485 ce_layer_28:3.970 ce_layer_29:4.005 ce_layer_30:3.394 ce_layer_31:3.273 ce_layer_32:3.088 ce_layer_33:3.069 ce_layer_34:3.043 ce_layer_35:2.954 ce_layer_36:2.606 ce_layer_37:2.631 ce_layer_38:2.662 ce_layer_39:2.724 ce_layer_40:2.810 ce_layer_41:2.947 ce_layer_42:2.735 ce_layer_43:2.849 ce_layer_44:2.936 ce_layer_45:3.022 ce_layer_46:3.129 ce_layer_47:3.287
+ep 0 step 250 loss 119.3851 ce_layer_1:0.957 ce_layer_2:0.997 ce_layer_3:1.147 ce_layer_4:1.101 ce_layer_5:1.261 ce_layer_6:1.362 ce_layer_7:1.268 ce_layer_8:1.432 ce_layer_9:1.843 ce_layer_10:1.846 ce_layer_11:2.461 ce_layer_12:2.319 ce_layer_13:2.404 ce_layer_14:3.169 ce_layer_15:3.754 ce_layer_16:4.105 ce_layer_17:4.331 ce_layer_18:4.094 ce_layer_19:4.203 ce_layer_20:4.217 ce_layer_21:4.560 ce_layer_22:4.781 ce_layer_23:4.974 ce_layer_24:4.474 ce_layer_25:4.220 ce_layer_26:3.817 ce_layer_27:3.200 ce_layer_28:2.796 ce_layer_29:2.753 ce_layer_30:2.348 ce_layer_31:2.197 ce_layer_32:2.012 ce_layer_33:2.001 ce_layer_34:1.979 ce_layer_35:1.839 ce_layer_36:1.683 ce_layer_37:1.711 ce_layer_38:1.741 ce_layer_39:1.792 ce_layer_40:1.861 ce_layer_41:1.942 ce_layer_42:1.802 ce_layer_43:1.906 ce_layer_44:2.002 ce_layer_45:2.113 ce_layer_46:2.217 ce_layer_47:2.395
+ep 0 step 300 loss 128.6395 ce_layer_1:1.314 ce_layer_2:1.388 ce_layer_3:1.629 ce_layer_4:1.583 ce_layer_5:1.657 ce_layer_6:1.723 ce_layer_7:1.669 ce_layer_8:1.803 ce_layer_9:2.161 ce_layer_10:2.183 ce_layer_11:2.634 ce_layer_12:2.487 ce_layer_13:2.589 ce_layer_14:3.147 ce_layer_15:3.673 ce_layer_16:4.011 ce_layer_17:4.161 ce_layer_18:3.828 ce_layer_19:3.898 ce_layer_20:3.941 ce_layer_21:4.281 ce_layer_22:4.461 ce_layer_23:4.677 ce_layer_24:4.308 ce_layer_25:4.111 ce_layer_26:3.786 ce_layer_27:3.319 ce_layer_28:2.982 ce_layer_29:2.942 ce_layer_30:2.690 ce_layer_31:2.573 ce_layer_32:2.384 ce_layer_33:2.390 ce_layer_34:2.371 ce_layer_35:2.269 ce_layer_36:2.105 ce_layer_37:2.118 ce_layer_38:2.138 ce_layer_39:2.187 ce_layer_40:2.223 ce_layer_41:2.275 ce_layer_42:2.226 ce_layer_43:2.321 ce_layer_44:2.378 ce_layer_45:2.456 ce_layer_46:2.530 ce_layer_47:2.661
+ep 0 step 350 loss 97.5908 ce_layer_1:0.822 ce_layer_2:0.873 ce_layer_3:1.069 ce_layer_4:0.996 ce_layer_5:1.076 ce_layer_6:1.179 ce_layer_7:1.090 ce_layer_8:1.207 ce_layer_9:1.477 ce_layer_10:1.483 ce_layer_11:1.872 ce_layer_12:1.741 ce_layer_13:1.814 ce_layer_14:2.284 ce_layer_15:2.750 ce_layer_16:3.060 ce_layer_17:3.214 ce_layer_18:2.975 ce_layer_19:3.055 ce_layer_20:3.117 ce_layer_21:3.469 ce_layer_22:3.695 ce_layer_23:3.851 ce_layer_24:3.636 ce_layer_25:3.437 ce_layer_26:3.097 ce_layer_27:2.737 ce_layer_28:2.330 ce_layer_29:2.327 ce_layer_30:2.130 ce_layer_31:2.004 ce_layer_32:1.842 ce_layer_33:1.844 ce_layer_34:1.819 ce_layer_35:1.721 ce_layer_36:1.484 ce_layer_37:1.517 ce_layer_38:1.547 ce_layer_39:1.593 ce_layer_40:1.654 ce_layer_41:1.713 ce_layer_42:1.616 ce_layer_43:1.703 ce_layer_44:1.772 ce_layer_45:1.854 ce_layer_46:1.960 ce_layer_47:2.084
+ep 0 step 400 loss 99.0239 ce_layer_1:0.799 ce_layer_2:0.848 ce_layer_3:1.069 ce_layer_4:1.020 ce_layer_5:1.104 ce_layer_6:1.198 ce_layer_7:1.109 ce_layer_8:1.227 ce_layer_9:1.472 ce_layer_10:1.473 ce_layer_11:1.814 ce_layer_12:1.750 ce_layer_13:1.831 ce_layer_14:2.204 ce_layer_15:2.573 ce_layer_16:2.822 ce_layer_17:2.941 ce_layer_18:2.845 ce_layer_19:2.929 ce_layer_20:2.979 ce_layer_21:3.288 ce_layer_22:3.505 ce_layer_23:3.684 ce_layer_24:3.590 ce_layer_25:3.419 ce_layer_26:3.056 ce_layer_27:2.668 ce_layer_28:2.382 ce_layer_29:2.327 ce_layer_30:2.204 ce_layer_31:2.080 ce_layer_32:1.968 ce_layer_33:1.991 ce_layer_34:1.984 ce_layer_35:1.810 ce_layer_36:1.645 ce_layer_37:1.666 ce_layer_38:1.698 ce_layer_39:1.756 ce_layer_40:1.801 ce_layer_41:1.855 ce_layer_42:1.868 ce_layer_43:1.957 ce_layer_44:2.033 ce_layer_45:2.161 ce_layer_46:2.259 ce_layer_47:2.364
+ep 0 step 450 loss 74.9312 ce_layer_1:0.670 ce_layer_2:0.719 ce_layer_3:0.876 ce_layer_4:0.840 ce_layer_5:0.892 ce_layer_6:0.942 ce_layer_7:0.907 ce_layer_8:1.006 ce_layer_9:1.164 ce_layer_10:1.186 ce_layer_11:1.393 ce_layer_12:1.358 ce_layer_13:1.435 ce_layer_14:1.693 ce_layer_15:1.976 ce_layer_16:2.173 ce_layer_17:2.281 ce_layer_18:2.249 ce_layer_19:2.320 ce_layer_20:2.380 ce_layer_21:2.616 ce_layer_22:2.800 ce_layer_23:2.963 ce_layer_24:2.915 ce_layer_25:2.755 ce_layer_26:2.421 ce_layer_27:2.104 ce_layer_28:1.785 ce_layer_29:1.748 ce_layer_30:1.640 ce_layer_31:1.523 ce_layer_32:1.387 ce_layer_33:1.388 ce_layer_34:1.378 ce_layer_35:1.252 ce_layer_36:1.179 ce_layer_37:1.197 ce_layer_38:1.215 ce_layer_39:1.242 ce_layer_40:1.267 ce_layer_41:1.303 ce_layer_42:1.252 ce_layer_43:1.309 ce_layer_44:1.350 ce_layer_45:1.417 ce_layer_46:1.486 ce_layer_47:1.580
+ep 0 step 500 loss 72.8640 ce_layer_1:0.452 ce_layer_2:0.496 ce_layer_3:0.692 ce_layer_4:0.612 ce_layer_5:0.668 ce_layer_6:0.792 ce_layer_7:0.754 ce_layer_8:0.835 ce_layer_9:1.010 ce_layer_10:1.041 ce_layer_11:1.263 ce_layer_12:1.247 ce_layer_13:1.337 ce_layer_14:1.582 ce_layer_15:1.825 ce_layer_16:1.992 ce_layer_17:2.118 ce_layer_18:2.183 ce_layer_19:2.264 ce_layer_20:2.301 ce_layer_21:2.531 ce_layer_22:2.686 ce_layer_23:2.841 ce_layer_24:2.868 ce_layer_25:2.697 ce_layer_26:2.412 ce_layer_27:2.098 ce_layer_28:1.814 ce_layer_29:1.780 ce_layer_30:1.748 ce_layer_31:1.624 ce_layer_32:1.444 ce_layer_33:1.475 ce_layer_34:1.450 ce_layer_35:1.269 ce_layer_36:1.161 ce_layer_37:1.175 ce_layer_38:1.191 ce_layer_39:1.240 ce_layer_40:1.280 ce_layer_41:1.332 ce_layer_42:1.334 ce_layer_43:1.410 ce_layer_44:1.490 ce_layer_45:1.603 ce_layer_46:1.680 ce_layer_47:1.765
+ep 0 step 550 loss 76.7845 ce_layer_1:0.505 ce_layer_2:0.569 ce_layer_3:0.846 ce_layer_4:0.791 ce_layer_5:0.856 ce_layer_6:0.933 ce_layer_7:0.875 ce_layer_8:1.004 ce_layer_9:1.192 ce_layer_10:1.214 ce_layer_11:1.432 ce_layer_12:1.405 ce_layer_13:1.494 ce_layer_14:1.728 ce_layer_15:1.914 ce_layer_16:2.039 ce_layer_17:2.149 ce_layer_18:2.236 ce_layer_19:2.281 ce_layer_20:2.334 ce_layer_21:2.514 ce_layer_22:2.649 ce_layer_23:2.768 ce_layer_24:2.795 ce_layer_25:2.669 ce_layer_26:2.411 ce_layer_27:2.146 ce_layer_28:1.929 ce_layer_29:1.892 ce_layer_30:1.787 ce_layer_31:1.683 ce_layer_32:1.540 ce_layer_33:1.550 ce_layer_34:1.504 ce_layer_35:1.378 ce_layer_36:1.267 ce_layer_37:1.290 ce_layer_38:1.316 ce_layer_39:1.358 ce_layer_40:1.404 ce_layer_41:1.439 ce_layer_42:1.441 ce_layer_43:1.497 ce_layer_44:1.546 ce_layer_45:1.655 ce_layer_46:1.737 ce_layer_47:1.823
+ep 0 step 600 loss 88.5780 ce_layer_1:0.614 ce_layer_2:0.698 ce_layer_3:0.940 ce_layer_4:0.927 ce_layer_5:1.009 ce_layer_6:1.110 ce_layer_7:1.148 ce_layer_8:1.264 ce_layer_9:1.457 ce_layer_10:1.495 ce_layer_11:1.695 ce_layer_12:1.695 ce_layer_13:1.767 ce_layer_14:1.981 ce_layer_15:2.187 ce_layer_16:2.334 ce_layer_17:2.451 ce_layer_18:2.521 ce_layer_19:2.590 ce_layer_20:2.661 ce_layer_21:2.823 ce_layer_22:2.910 ce_layer_23:2.983 ce_layer_24:3.053 ce_layer_25:2.922 ce_layer_26:2.694 ce_layer_27:2.480 ce_layer_28:2.200 ce_layer_29:2.157 ce_layer_30:2.055 ce_layer_31:1.937 ce_layer_32:1.782 ce_layer_33:1.775 ce_layer_34:1.754 ce_layer_35:1.648 ce_layer_36:1.566 ce_layer_37:1.592 ce_layer_38:1.612 ce_layer_39:1.647 ce_layer_40:1.667 ce_layer_41:1.698 ce_layer_42:1.712 ce_layer_43:1.765 ce_layer_44:1.785 ce_layer_45:1.863 ce_layer_46:1.932 ce_layer_47:2.024
+ep 0 step 650 loss 61.2901 ce_layer_1:0.366 ce_layer_2:0.420 ce_layer_3:0.578 ce_layer_4:0.558 ce_layer_5:0.619 ce_layer_6:0.690 ce_layer_7:0.679 ce_layer_8:0.744 ce_layer_9:0.874 ce_layer_10:0.892 ce_layer_11:1.045 ce_layer_12:1.038 ce_layer_13:1.119 ce_layer_14:1.302 ce_layer_15:1.462 ce_layer_16:1.587 ce_layer_17:1.693 ce_layer_18:1.770 ce_layer_19:1.851 ce_layer_20:1.922 ce_layer_21:2.045 ce_layer_22:2.150 ce_layer_23:2.238 ce_layer_24:2.316 ce_layer_25:2.189 ce_layer_26:1.941 ce_layer_27:1.683 ce_layer_28:1.477 ce_layer_29:1.434 ce_layer_30:1.406 ce_layer_31:1.340 ce_layer_32:1.252 ce_layer_33:1.271 ce_layer_34:1.255 ce_layer_35:1.143 ce_layer_36:1.072 ce_layer_37:1.089 ce_layer_38:1.112 ce_layer_39:1.142 ce_layer_40:1.177 ce_layer_41:1.197 ce_layer_42:1.185 ce_layer_43:1.252 ce_layer_44:1.296 ce_layer_45:1.387 ce_layer_46:1.475 ce_layer_47:1.556
+ep 0 step 700 loss 88.3615 ce_layer_1:0.515 ce_layer_2:0.594 ce_layer_3:0.880 ce_layer_4:0.845 ce_layer_5:0.946 ce_layer_6:1.069 ce_layer_7:1.099 ce_layer_8:1.214 ce_layer_9:1.402 ce_layer_10:1.452 ce_layer_11:1.664 ce_layer_12:1.657 ce_layer_13:1.741 ce_layer_14:1.950 ce_layer_15:2.131 ce_layer_16:2.251 ce_layer_17:2.369 ce_layer_18:2.436 ce_layer_19:2.520 ce_layer_20:2.570 ce_layer_21:2.733 ce_layer_22:2.843 ce_layer_23:2.926 ce_layer_24:2.979 ce_layer_25:2.857 ce_layer_26:2.615 ce_layer_27:2.388 ce_layer_28:2.171 ce_layer_29:2.156 ce_layer_30:2.099 ce_layer_31:1.989 ce_layer_32:1.829 ce_layer_33:1.853 ce_layer_34:1.854 ce_layer_35:1.730 ce_layer_36:1.635 ce_layer_37:1.666 ce_layer_38:1.680 ce_layer_39:1.725 ce_layer_40:1.747 ce_layer_41:1.770 ce_layer_42:1.774 ce_layer_43:1.841 ce_layer_44:1.899 ce_layer_45:2.003 ce_layer_46:2.094 ce_layer_47:2.198
+ep 0 step 750 loss 85.1403 ce_layer_1:0.378 ce_layer_2:0.463 ce_layer_3:0.710 ce_layer_4:0.725 ce_layer_5:0.853 ce_layer_6:0.980 ce_layer_7:1.020 ce_layer_8:1.139 ce_layer_9:1.324 ce_layer_10:1.377 ce_layer_11:1.570 ce_layer_12:1.604 ce_layer_13:1.686 ce_layer_14:1.884 ce_layer_15:2.044 ce_layer_16:2.159 ce_layer_17:2.269 ce_layer_18:2.365 ce_layer_19:2.435 ce_layer_20:2.474 ce_layer_21:2.628 ce_layer_22:2.746 ce_layer_23:2.898 ce_layer_24:2.960 ce_layer_25:2.806 ce_layer_26:2.552 ce_layer_27:2.301 ce_layer_28:2.103 ce_layer_29:2.043 ce_layer_30:2.024 ce_layer_31:1.928 ce_layer_32:1.786 ce_layer_33:1.810 ce_layer_34:1.794 ce_layer_35:1.698 ce_layer_36:1.624 ce_layer_37:1.663 ce_layer_38:1.669 ce_layer_39:1.699 ce_layer_40:1.716 ce_layer_41:1.743 ce_layer_42:1.763 ce_layer_43:1.815 ce_layer_44:1.854 ce_layer_45:1.948 ce_layer_46:2.028 ce_layer_47:2.084
+ep 0 step 800 loss 73.6140 ce_layer_1:0.263 ce_layer_2:0.331 ce_layer_3:0.505 ce_layer_4:0.511 ce_layer_5:0.625 ce_layer_6:0.790 ce_layer_7:0.932 ce_layer_8:1.029 ce_layer_9:1.139 ce_layer_10:1.180 ce_layer_11:1.356 ce_layer_12:1.389 ce_layer_13:1.474 ce_layer_14:1.668 ce_layer_15:1.854 ce_layer_16:1.972 ce_layer_17:2.067 ce_layer_18:2.157 ce_layer_19:2.216 ce_layer_20:2.276 ce_layer_21:2.407 ce_layer_22:2.481 ce_layer_23:2.564 ce_layer_24:2.640 ce_layer_25:2.520 ce_layer_26:2.281 ce_layer_27:2.053 ce_layer_28:1.814 ce_layer_29:1.763 ce_layer_30:1.775 ce_layer_31:1.659 ce_layer_32:1.504 ce_layer_33:1.509 ce_layer_34:1.500 ce_layer_35:1.375 ce_layer_36:1.360 ce_layer_37:1.379 ce_layer_38:1.384 ce_layer_39:1.404 ce_layer_40:1.431 ce_layer_41:1.435 ce_layer_42:1.491 ce_layer_43:1.521 ce_layer_44:1.555 ce_layer_45:1.636 ce_layer_46:1.685 ce_layer_47:1.756
+ep 0 step 850 loss 88.5009 ce_layer_1:0.402 ce_layer_2:0.473 ce_layer_3:0.784 ce_layer_4:0.781 ce_layer_5:0.872 ce_layer_6:1.000 ce_layer_7:1.027 ce_layer_8:1.163 ce_layer_9:1.368 ce_layer_10:1.446 ce_layer_11:1.632 ce_layer_12:1.676 ce_layer_13:1.790 ce_layer_14:2.028 ce_layer_15:2.221 ce_layer_16:2.353 ce_layer_17:2.433 ce_layer_18:2.508 ce_layer_19:2.576 ce_layer_20:2.632 ce_layer_21:2.769 ce_layer_22:2.868 ce_layer_23:2.946 ce_layer_24:3.015 ce_layer_25:2.915 ce_layer_26:2.644 ce_layer_27:2.434 ce_layer_28:2.176 ce_layer_29:2.140 ce_layer_30:2.118 ce_layer_31:2.025 ce_layer_32:1.882 ce_layer_33:1.895 ce_layer_34:1.877 ce_layer_35:1.698 ce_layer_36:1.625 ce_layer_37:1.644 ce_layer_38:1.661 ce_layer_39:1.694 ce_layer_40:1.718 ce_layer_41:1.741 ce_layer_42:1.769 ce_layer_43:1.855 ce_layer_44:1.912 ce_layer_45:2.017 ce_layer_46:2.115 ce_layer_47:2.182
+ep 0 step 900 loss 54.6414 ce_layer_1:0.161 ce_layer_2:0.202 ce_layer_3:0.340 ce_layer_4:0.352 ce_layer_5:0.432 ce_layer_6:0.514 ce_layer_7:0.548 ce_layer_8:0.629 ce_layer_9:0.755 ce_layer_10:0.804 ce_layer_11:0.948 ce_layer_12:0.961 ce_layer_13:1.044 ce_layer_14:1.214 ce_layer_15:1.353 ce_layer_16:1.467 ce_layer_17:1.570 ce_layer_18:1.649 ce_layer_19:1.717 ce_layer_20:1.782 ce_layer_21:1.884 ce_layer_22:1.955 ce_layer_23:2.043 ce_layer_24:2.093 ce_layer_25:1.989 ce_layer_26:1.762 ce_layer_27:1.567 ce_layer_28:1.337 ce_layer_29:1.307 ce_layer_30:1.315 ce_layer_31:1.240 ce_layer_32:1.111 ce_layer_33:1.111 ce_layer_34:1.107 ce_layer_35:0.970 ce_layer_36:0.943 ce_layer_37:0.961 ce_layer_38:0.970 ce_layer_39:0.996 ce_layer_40:1.029 ce_layer_41:1.051 ce_layer_42:1.076 ce_layer_43:1.146 ce_layer_44:1.198 ce_layer_45:1.281 ce_layer_46:1.342 ce_layer_47:1.414
+ep 0 step 950 loss 57.5949 ce_layer_1:0.176 ce_layer_2:0.216 ce_layer_3:0.342 ce_layer_4:0.341 ce_layer_5:0.421 ce_layer_6:0.495 ce_layer_7:0.531 ce_layer_8:0.619 ce_layer_9:0.772 ce_layer_10:0.829 ce_layer_11:0.994 ce_layer_12:1.024 ce_layer_13:1.119 ce_layer_14:1.295 ce_layer_15:1.447 ce_layer_16:1.565 ce_layer_17:1.663 ce_layer_18:1.758 ce_layer_19:1.832 ce_layer_20:1.891 ce_layer_21:1.984 ce_layer_22:2.065 ce_layer_23:2.155 ce_layer_24:2.229 ce_layer_25:2.110 ce_layer_26:1.868 ce_layer_27:1.661 ce_layer_28:1.442 ce_layer_29:1.384 ce_layer_30:1.379 ce_layer_31:1.291 ce_layer_32:1.190 ce_layer_33:1.216 ce_layer_34:1.215 ce_layer_35:1.052 ce_layer_36:0.996 ce_layer_37:1.018 ce_layer_38:1.021 ce_layer_39:1.055 ce_layer_40:1.087 ce_layer_41:1.110 ce_layer_42:1.143 ce_layer_43:1.185 ce_layer_44:1.232 ce_layer_45:1.322 ce_layer_46:1.395 ce_layer_47:1.461
+ep 0 step 1000 loss 78.6615 ce_layer_1:0.213 ce_layer_2:0.280 ce_layer_3:0.509 ce_layer_4:0.529 ce_layer_5:0.650 ce_layer_6:0.780 ce_layer_7:0.779 ce_layer_8:0.925 ce_layer_9:1.114 ce_layer_10:1.199 ce_layer_11:1.395 ce_layer_12:1.436 ce_layer_13:1.535 ce_layer_14:1.735 ce_layer_15:1.903 ce_layer_16:2.044 ce_layer_17:2.151 ce_layer_18:2.253 ce_layer_19:2.336 ce_layer_20:2.381 ce_layer_21:2.495 ce_layer_22:2.564 ce_layer_23:2.660 ce_layer_24:2.778 ce_layer_25:2.689 ce_layer_26:2.479 ce_layer_27:2.284 ce_layer_28:2.011 ce_layer_29:1.930 ce_layer_30:1.905 ce_layer_31:1.798 ce_layer_32:1.637 ce_layer_33:1.676 ce_layer_34:1.640 ce_layer_35:1.506 ce_layer_36:1.462 ce_layer_37:1.485 ce_layer_38:1.502 ce_layer_39:1.545 ce_layer_40:1.586 ce_layer_41:1.614 ce_layer_42:1.652 ce_layer_43:1.739 ce_layer_44:1.817 ce_layer_45:1.934 ce_layer_46:2.026 ce_layer_47:2.100
+ep 0 step 1050 loss 75.0028 ce_layer_1:0.236 ce_layer_2:0.299 ce_layer_3:0.526 ce_layer_4:0.522 ce_layer_5:0.637 ce_layer_6:0.765 ce_layer_7:0.796 ce_layer_8:0.938 ce_layer_9:1.124 ce_layer_10:1.192 ce_layer_11:1.379 ce_layer_12:1.401 ce_layer_13:1.519 ce_layer_14:1.732 ce_layer_15:1.899 ce_layer_16:2.027 ce_layer_17:2.144 ce_layer_18:2.243 ce_layer_19:2.317 ce_layer_20:2.369 ce_layer_21:2.468 ce_layer_22:2.550 ce_layer_23:2.660 ce_layer_24:2.733 ce_layer_25:2.623 ce_layer_26:2.387 ce_layer_27:2.117 ce_layer_28:1.831 ce_layer_29:1.781 ce_layer_30:1.738 ce_layer_31:1.621 ce_layer_32:1.492 ce_layer_33:1.551 ce_layer_34:1.543 ce_layer_35:1.368 ce_layer_36:1.316 ce_layer_37:1.346 ce_layer_38:1.355 ce_layer_39:1.392 ce_layer_40:1.434 ce_layer_41:1.471 ce_layer_42:1.468 ce_layer_43:1.554 ce_layer_44:1.640 ce_layer_45:1.734 ce_layer_46:1.836 ce_layer_47:1.931
+ep 0 step 1100 loss 72.0238 ce_layer_1:0.175 ce_layer_2:0.229 ce_layer_3:0.446 ce_layer_4:0.463 ce_layer_5:0.529 ce_layer_6:0.621 ce_layer_7:0.683 ce_layer_8:0.815 ce_layer_9:0.992 ce_layer_10:1.060 ce_layer_11:1.243 ce_layer_12:1.296 ce_layer_13:1.416 ce_layer_14:1.603 ce_layer_15:1.767 ce_layer_16:1.897 ce_layer_17:2.026 ce_layer_18:2.152 ce_layer_19:2.253 ce_layer_20:2.284 ce_layer_21:2.407 ce_layer_22:2.488 ce_layer_23:2.564 ce_layer_24:2.669 ce_layer_25:2.567 ce_layer_26:2.364 ce_layer_27:2.161 ce_layer_28:1.837 ce_layer_29:1.752 ce_layer_30:1.768 ce_layer_31:1.646 ce_layer_32:1.484 ce_layer_33:1.486 ce_layer_34:1.501 ce_layer_35:1.370 ce_layer_36:1.316 ce_layer_37:1.341 ce_layer_38:1.342 ce_layer_39:1.368 ce_layer_40:1.395 ce_layer_41:1.429 ce_layer_42:1.456 ce_layer_43:1.537 ce_layer_44:1.575 ce_layer_45:1.664 ce_layer_46:1.754 ce_layer_47:1.835
+ep 0 step 1150 loss 63.3605 ce_layer_1:0.146 ce_layer_2:0.178 ce_layer_3:0.342 ce_layer_4:0.359 ce_layer_5:0.436 ce_layer_6:0.539 ce_layer_7:0.557 ce_layer_8:0.661 ce_layer_9:0.814 ce_layer_10:0.890 ce_layer_11:1.043 ce_layer_12:1.083 ce_layer_13:1.205 ce_layer_14:1.385 ce_layer_15:1.526 ce_layer_16:1.642 ce_layer_17:1.736 ce_layer_18:1.841 ce_layer_19:1.915 ce_layer_20:1.951 ce_layer_21:2.069 ce_layer_22:2.138 ce_layer_23:2.216 ce_layer_24:2.296 ce_layer_25:2.179 ce_layer_26:1.986 ce_layer_27:1.787 ce_layer_28:1.531 ce_layer_29:1.523 ce_layer_30:1.526 ce_layer_31:1.464 ce_layer_32:1.377 ce_layer_33:1.390 ce_layer_34:1.378 ce_layer_35:1.240 ce_layer_36:1.197 ce_layer_37:1.234 ce_layer_38:1.246 ce_layer_39:1.269 ce_layer_40:1.307 ce_layer_41:1.338 ce_layer_42:1.381 ce_layer_43:1.454 ce_layer_44:1.506 ce_layer_45:1.614 ce_layer_46:1.699 ce_layer_47:1.766
+ep 0 step 1200 loss 60.3615 ce_layer_1:0.128 ce_layer_2:0.165 ce_layer_3:0.293 ce_layer_4:0.311 ce_layer_5:0.407 ce_layer_6:0.502 ce_layer_7:0.571 ce_layer_8:0.672 ce_layer_9:0.803 ce_layer_10:0.860 ce_layer_11:1.004 ce_layer_12:1.041 ce_layer_13:1.135 ce_layer_14:1.300 ce_layer_15:1.432 ce_layer_16:1.547 ce_layer_17:1.653 ce_layer_18:1.753 ce_layer_19:1.826 ce_layer_20:1.876 ce_layer_21:1.962 ce_layer_22:2.034 ce_layer_23:2.115 ce_layer_24:2.203 ce_layer_25:2.127 ce_layer_26:1.949 ce_layer_27:1.748 ce_layer_28:1.507 ce_layer_29:1.424 ce_layer_30:1.477 ce_layer_31:1.401 ce_layer_32:1.305 ce_layer_33:1.329 ce_layer_34:1.303 ce_layer_35:1.156 ce_layer_36:1.096 ce_layer_37:1.114 ce_layer_38:1.123 ce_layer_39:1.155 ce_layer_40:1.184 ce_layer_41:1.215 ce_layer_42:1.341 ce_layer_43:1.412 ce_layer_44:1.468 ce_layer_45:1.580 ce_layer_46:1.649 ce_layer_47:1.706
+ep 0 step 1250 loss 71.6433 ce_layer_1:0.158 ce_layer_2:0.209 ce_layer_3:0.363 ce_layer_4:0.377 ce_layer_5:0.465 ce_layer_6:0.568 ce_layer_7:0.601 ce_layer_8:0.735 ce_layer_9:0.915 ce_layer_10:1.016 ce_layer_11:1.208 ce_layer_12:1.276 ce_layer_13:1.431 ce_layer_14:1.660 ce_layer_15:1.822 ce_layer_16:1.937 ce_layer_17:2.021 ce_layer_18:2.143 ce_layer_19:2.206 ce_layer_20:2.233 ce_layer_21:2.339 ce_layer_22:2.418 ce_layer_23:2.487 ce_layer_24:2.553 ce_layer_25:2.467 ce_layer_26:2.251 ce_layer_27:2.051 ce_layer_28:1.795 ce_layer_29:1.736 ce_layer_30:1.757 ce_layer_31:1.672 ce_layer_32:1.523 ce_layer_33:1.570 ce_layer_34:1.572 ce_layer_35:1.398 ce_layer_36:1.333 ce_layer_37:1.357 ce_layer_38:1.366 ce_layer_39:1.407 ce_layer_40:1.444 ce_layer_41:1.470 ce_layer_42:1.514 ce_layer_43:1.609 ce_layer_44:1.666 ce_layer_45:1.768 ce_layer_46:1.846 ce_layer_47:1.930
+ep 0 step 1300 loss 104.3115 ce_layer_1:0.390 ce_layer_2:0.499 ce_layer_3:0.787 ce_layer_4:0.879 ce_layer_5:1.046 ce_layer_6:1.191 ce_layer_7:1.316 ce_layer_8:1.467 ce_layer_9:1.676 ce_layer_10:1.800 ce_layer_11:1.944 ce_layer_12:2.001 ce_layer_13:2.096 ce_layer_14:2.273 ce_layer_15:2.414 ce_layer_16:2.524 ce_layer_17:2.615 ce_layer_18:2.704 ce_layer_19:2.779 ce_layer_20:2.838 ce_layer_21:2.935 ce_layer_22:3.025 ce_layer_23:3.097 ce_layer_24:3.190 ce_layer_25:3.125 ce_layer_26:2.982 ce_layer_27:2.862 ce_layer_28:2.606 ce_layer_29:2.556 ce_layer_30:2.579 ce_layer_31:2.512 ce_layer_32:2.349 ce_layer_33:2.329 ce_layer_34:2.318 ce_layer_35:2.212 ce_layer_36:2.201 ce_layer_37:2.202 ce_layer_38:2.214 ce_layer_39:2.251 ce_layer_40:2.282 ce_layer_41:2.299 ce_layer_42:2.377 ce_layer_43:2.434 ce_layer_44:2.456 ce_layer_45:2.529 ce_layer_46:2.570 ce_layer_47:2.585
+ep 0 step 1350 loss 49.9726 ce_layer_1:0.080 ce_layer_2:0.104 ce_layer_3:0.191 ce_layer_4:0.213 ce_layer_5:0.281 ce_layer_6:0.361 ce_layer_7:0.395 ce_layer_8:0.473 ce_layer_9:0.583 ce_layer_10:0.641 ce_layer_11:0.769 ce_layer_12:0.800 ce_layer_13:0.891 ce_layer_14:1.029 ce_layer_15:1.158 ce_layer_16:1.264 ce_layer_17:1.354 ce_layer_18:1.438 ce_layer_19:1.505 ce_layer_20:1.549 ce_layer_21:1.635 ce_layer_22:1.685 ce_layer_23:1.740 ce_layer_24:1.814 ce_layer_25:1.759 ce_layer_26:1.589 ce_layer_27:1.453 ce_layer_28:1.314 ce_layer_29:1.288 ce_layer_30:1.297 ce_layer_31:1.247 ce_layer_32:1.136 ce_layer_33:1.161 ce_layer_34:1.114 ce_layer_35:1.019 ce_layer_36:1.011 ce_layer_37:1.033 ce_layer_38:1.043 ce_layer_39:1.058 ce_layer_40:1.080 ce_layer_41:1.097 ce_layer_42:1.108 ce_layer_43:1.161 ce_layer_44:1.180 ce_layer_45:1.245 ce_layer_46:1.295 ce_layer_47:1.331
+ep 0 step 1400 loss 76.7602 ce_layer_1:0.190 ce_layer_2:0.240 ce_layer_3:0.383 ce_layer_4:0.422 ce_layer_5:0.579 ce_layer_6:0.708 ce_layer_7:0.807 ce_layer_8:0.921 ce_layer_9:1.104 ce_layer_10:1.199 ce_layer_11:1.384 ce_layer_12:1.437 ce_layer_13:1.557 ce_layer_14:1.783 ce_layer_15:1.946 ce_layer_16:2.075 ce_layer_17:2.186 ce_layer_18:2.295 ce_layer_19:2.373 ce_layer_20:2.430 ce_layer_21:2.493 ce_layer_22:2.566 ce_layer_23:2.615 ce_layer_24:2.674 ce_layer_25:2.578 ce_layer_26:2.340 ce_layer_27:2.178 ce_layer_28:1.902 ce_layer_29:1.852 ce_layer_30:1.825 ce_layer_31:1.755 ce_layer_32:1.611 ce_layer_33:1.633 ce_layer_34:1.633 ce_layer_35:1.485 ce_layer_36:1.432 ce_layer_37:1.456 ce_layer_38:1.460 ce_layer_39:1.501 ce_layer_40:1.540 ce_layer_41:1.550 ce_layer_42:1.599 ce_layer_43:1.661 ce_layer_44:1.710 ce_layer_45:1.817 ce_layer_46:1.897 ce_layer_47:1.976
+ep 0 step 1450 loss 49.7105 ce_layer_1:0.165 ce_layer_2:0.187 ce_layer_3:0.299 ce_layer_4:0.313 ce_layer_5:0.397 ce_layer_6:0.466 ce_layer_7:0.514 ce_layer_8:0.583 ce_layer_9:0.683 ce_layer_10:0.745 ce_layer_11:0.844 ce_layer_12:0.900 ce_layer_13:0.980 ce_layer_14:1.108 ce_layer_15:1.207 ce_layer_16:1.294 ce_layer_17:1.379 ce_layer_18:1.458 ce_layer_19:1.509 ce_layer_20:1.546 ce_layer_21:1.590 ce_layer_22:1.630 ce_layer_23:1.669 ce_layer_24:1.767 ce_layer_25:1.690 ce_layer_26:1.517 ce_layer_27:1.388 ce_layer_28:1.220 ce_layer_29:1.149 ce_layer_30:1.171 ce_layer_31:1.117 ce_layer_32:1.047 ce_layer_33:1.057 ce_layer_34:1.062 ce_layer_35:0.967 ce_layer_36:0.945 ce_layer_37:0.969 ce_layer_38:0.980 ce_layer_39:0.996 ce_layer_40:1.016 ce_layer_41:1.031 ce_layer_42:1.074 ce_layer_43:1.118 ce_layer_44:1.147 ce_layer_45:1.217 ce_layer_46:1.279 ce_layer_47:1.319
+ep 0 step 1500 loss 70.8917 ce_layer_1:0.109 ce_layer_2:0.161 ce_layer_3:0.335 ce_layer_4:0.407 ce_layer_5:0.543 ce_layer_6:0.699 ce_layer_7:0.730 ce_layer_8:0.867 ce_layer_9:1.072 ce_layer_10:1.181 ce_layer_11:1.350 ce_layer_12:1.420 ce_layer_13:1.541 ce_layer_14:1.727 ce_layer_15:1.874 ce_layer_16:1.989 ce_layer_17:2.079 ce_layer_18:2.188 ce_layer_19:2.259 ce_layer_20:2.292 ce_layer_21:2.377 ce_layer_22:2.429 ce_layer_23:2.480 ce_layer_24:2.558 ce_layer_25:2.480 ce_layer_26:2.251 ce_layer_27:2.069 ce_layer_28:1.795 ce_layer_29:1.707 ce_layer_30:1.682 ce_layer_31:1.568 ce_layer_32:1.393 ce_layer_33:1.418 ce_layer_34:1.403 ce_layer_35:1.276 ce_layer_36:1.277 ce_layer_37:1.303 ce_layer_38:1.314 ce_layer_39:1.343 ce_layer_40:1.377 ce_layer_41:1.393 ce_layer_42:1.408 ce_layer_43:1.440 ce_layer_44:1.475 ce_layer_45:1.541 ce_layer_46:1.612 ce_layer_47:1.703
+Evaluating (on test set)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+{
+  "CE@layer_1": 0.15315978982512585,
+  "Top1@layer_1": 0.9992339261285887,
+  "Top5@layer_1": 0.9997777017783855,
+  "Top10@layer_1": 0.9997811217510257,
+  "CE@layer_2": 0.21020687584002107,
+  "Top1@layer_2": 0.9991689466484245,
+  "Top5@layer_2": 0.9997777017783855,
+  "Top10@layer_2": 0.9997777017783855,
+  "CE@layer_3": 0.38743108249028635,
+  "Top1@layer_3": 0.9986012311901472,
+  "Top5@layer_3": 0.9997606019151842,
+  "Top10@layer_3": 0.9997845417236658,
+  "CE@layer_4": 0.4410973756628878,
+  "Top1@layer_4": 0.998108755129955,
+  "Top5@layer_4": 0.9997606019151842,
+  "Top10@layer_4": 0.9997948016415867,
+  "CE@layer_5": 0.5628136323329199,
+  "Top1@layer_5": 0.9959781121750957,
+  "Top5@layer_5": 0.9995998632010937,
+  "Top10@layer_5": 0.9997366621067029,
+  "CE@layer_6": 0.6804920504463355,
+  "Top1@layer_6": 0.9915731874144925,
+  "Top5@layer_6": 0.9991484268125831,
+  "Top10@layer_6": 0.9995656634746912,
+  "CE@layer_7": 0.7489505294002032,
+  "Top1@layer_7": 0.9863577291381609,
+  "Top5@layer_7": 0.9977051983584065,
+  "Top10@layer_7": 0.9990868673050587,
+  "CE@layer_8": 0.8771070234997328,
+  "Top1@layer_8": 0.981412448700407,
+  "Top5@layer_8": 0.9963337893296775,
+  "Top10@layer_8": 0.9980984952120333,
+  "CE@layer_9": 1.0286971054431024,
+  "Top1@layer_9": 0.9698426812585511,
+  "Top5@layer_9": 0.9924555403556675,
+  "Top10@layer_9": 0.996025991792058,
+  "CE@layer_10": 1.105289850450247,
+  "Top1@layer_10": 0.9646238030095772,
+  "Top5@layer_10": 0.9897058823529327,
+  "Top10@layer_10": 0.993919288645682,
+  "CE@layer_11": 1.248894299797092,
+  "Top1@layer_11": 0.957578659370729,
+  "Top5@layer_11": 0.9845998632010894,
+  "Top10@layer_11": 0.9896956224350132,
+  "CE@layer_12": 1.3094720532646258,
+  "Top1@layer_12": 0.9520519835841345,
+  "Top5@layer_12": 0.9819117647058779,
+  "Top10@layer_12": 0.9875478796169554,
+  "CE@layer_13": 1.4137274570732534,
+  "Top1@layer_13": 0.9470588235294153,
+  "Top5@layer_13": 0.9786114911080701,
+  "Top10@layer_13": 0.9844562243501992,
+  "CE@layer_14": 1.5721183740081603,
+  "Top1@layer_14": 0.9400000000000033,
+  "Top5@layer_14": 0.9746272229822152,
+  "Top10@layer_14": 0.9805608755129928,
+  "CE@layer_15": 1.6948720651759006,
+  "Top1@layer_15": 0.9338679890560859,
+  "Top5@layer_15": 0.9709439124487018,
+  "Top10@layer_15": 0.9771819425444584,
+  "CE@layer_16": 1.7977375841907208,
+  "Top1@layer_16": 0.929654582763338,
+  "Top5@layer_16": 0.9686285909712736,
+  "Top10@layer_16": 0.9752462380300952,
+  "CE@layer_17": 1.887177964404898,
+  "Top1@layer_17": 0.9269699042407661,
+  "Top5@layer_17": 0.9666142270861844,
+  "Top10@layer_17": 0.9729924760601915,
+  "CE@layer_18": 1.983139030502857,
+  "Top1@layer_18": 0.9225307797537604,
+  "Top5@layer_18": 0.9652496580027369,
+  "Top10@layer_18": 0.9717441860465109,
+  "CE@layer_19": 2.0456287731224143,
+  "Top1@layer_19": 0.9185875512995901,
+  "Top5@layer_19": 0.9633857729138173,
+  "Top10@layer_19": 0.9700307797537638,
+  "CE@layer_20": 2.086423009674787,
+  "Top1@layer_20": 0.9157831737346086,
+  "Top5@layer_20": 0.9615971272229833,
+  "Top10@layer_20": 0.968437072503421,
+  "CE@layer_21": 2.1519351422215944,
+  "Top1@layer_21": 0.9063543091655265,
+  "Top5@layer_21": 0.9566997264021914,
+  "Top10@layer_21": 0.9654001367989075,
+  "CE@layer_22": 2.209264255010315,
+  "Top1@layer_22": 0.901333789329684,
+  "Top5@layer_22": 0.953994528043777,
+  "Top10@layer_22": 0.9633960328317385,
+  "CE@layer_23": 2.2567020991432356,
+  "Top1@layer_23": 0.8949726402188758,
+  "Top5@layer_23": 0.9508755129958997,
+  "Top10@layer_23": 0.9607831737346123,
+  "CE@layer_24": 2.3276207870236827,
+  "Top1@layer_24": 0.8833515731874139,
+  "Top5@layer_24": 0.9451094391244891,
+  "Top10@layer_24": 0.9560396716826289,
+  "CE@layer_25": 2.2439403283612345,
+  "Top1@layer_25": 0.891997264021888,
+  "Top5@layer_25": 0.9484097127223008,
+  "Top10@layer_25": 0.9582352941176505,
+  "CE@layer_26": 2.0651973313900416,
+  "Top1@layer_26": 0.9032626538987678,
+  "Top5@layer_26": 0.9523632010943939,
+  "Top10@layer_26": 0.9611149110807143,
+  "CE@layer_27": 1.9039808325826224,
+  "Top1@layer_27": 0.9074863201094376,
+  "Top5@layer_27": 0.9545656634746943,
+  "Top10@layer_27": 0.9631292749658026,
+  "CE@layer_28": 1.698020914959353,
+  "Top1@layer_28": 0.9195964432284527,
+  "Top5@layer_28": 0.9608139534883727,
+  "Top10@layer_28": 0.9687824897400833,
+  "CE@layer_29": 1.6448069167528532,
+  "Top1@layer_29": 0.9213919288645688,
+  "Top5@layer_29": 0.9626983584131359,
+  "Top10@layer_29": 0.9711320109439128,
+  "CE@layer_30": 1.6491781133144239,
+  "Top1@layer_30": 0.9235943912448698,
+  "Top5@layer_30": 0.9651778385772946,
+  "Top10@layer_30": 0.9731258549931593,
+  "CE@layer_31": 1.5926267634338296,
+  "Top1@layer_31": 0.9226846785225699,
+  "Top5@layer_31": 0.965619015047881,
+  "Top10@layer_31": 0.9736354309165517,
+  "CE@layer_32": 1.4783759731519075,
+  "Top1@layer_32": 0.9267099863201081,
+  "Top5@layer_32": 0.9695177838577289,
+  "Top10@layer_32": 0.9771853625170999,
+  "CE@layer_33": 1.5017462964749368,
+  "Top1@layer_33": 0.9255677154582758,
+  "Top5@layer_33": 0.9687824897400819,
+  "Top10@layer_33": 0.9763440492476055,
+  "CE@layer_34": 1.4938779655135608,
+  "Top1@layer_34": 0.9255813953488368,
+  "Top5@layer_34": 0.9685020519835854,
+  "Top10@layer_34": 0.9761217510259902,
+  "CE@layer_35": 1.3759730037520914,
+  "Top1@layer_35": 0.9283789329685364,
+  "Top5@layer_35": 0.9708413132694944,
+  "Top10@layer_35": 0.97830711354309,
+  "CE@layer_36": 1.34110609924092,
+  "Top1@layer_36": 0.9341244870041041,
+  "Top5@layer_36": 0.9713372093023255,
+  "Top10@layer_36": 0.9785328317373436,
+  "CE@layer_37": 1.3680030281582871,
+  "Top1@layer_37": 0.9328043775649809,
+  "Top5@layer_37": 0.9703967168262657,
+  "Top10@layer_37": 0.9775410396716798,
+  "CE@layer_38": 1.3757590390996632,
+  "Top1@layer_38": 0.9328454172366633,
+  "Top5@layer_38": 0.97030437756498,
+  "Top10@layer_38": 0.9774350205198333,
+  "CE@layer_39": 1.4048219125019705,
+  "Top1@layer_39": 0.9325991792065678,
+  "Top5@layer_39": 0.9699281805745559,
+  "Top10@layer_39": 0.9772571819425421,
+  "CE@layer_40": 1.4309950277270436,
+  "Top1@layer_40": 0.9330882352941198,
+  "Top5@layer_40": 0.9693467852257186,
+  "Top10@layer_40": 0.9764945280437738,
+  "CE@layer_41": 1.4484335782589892,
+  "Top1@layer_41": 0.9339124487004128,
+  "Top5@layer_41": 0.9693228454172361,
+  "Top10@layer_41": 0.9769254445964412,
+  "CE@layer_42": 1.4773012851804455,
+  "Top1@layer_42": 0.9382113543091696,
+  "Top5@layer_42": 0.9717852257181954,
+  "Top10@layer_42": 0.9789911080711322,
+  "CE@layer_43": 1.538744261343078,
+  "Top1@layer_43": 0.9390424076607411,
+  "Top5@layer_43": 0.972294801641586,
+  "Top10@layer_43": 0.9794801641586837,
+  "CE@layer_44": 1.5812032551347965,
+  "Top1@layer_44": 0.9406258549931631,
+  "Top5@layer_44": 0.973857729138165,
+  "Top10@layer_44": 0.9806326949384363,
+  "CE@layer_45": 1.662048033829753,
+  "Top1@layer_45": 0.939770861833107,
+  "Top5@layer_45": 0.9740868673050611,
+  "Top10@layer_45": 0.9810020519835797,
+  "CE@layer_46": 1.732015806249,
+  "Top1@layer_46": 0.9394425444596463,
+  "Top5@layer_46": 0.9742065663474679,
+  "Top10@layer_46": 0.9806224350205158,
+  "CE@layer_47": 1.7921438615070975,
+  "Top1@layer_47": 0.9372298221614247,
+  "Top5@layer_47": 0.9734610123118999,
+  "Top10@layer_47": 0.9798187414500636
+}
+Saved lens to ./revlexlens_ckpt/lens.pt
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)

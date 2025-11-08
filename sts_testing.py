@@ -85,7 +85,6 @@ def gemma(data_loader,devices):
     #         └── norm
     #         └── rotary_emb
     #     └── lm_head
-    acess_token_gemma= "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"
     # prompt = "Explain the theory of relativity in simple terms."
     print("Loading model...")
     tokenizer, model = load_model(model_name,acess_token_gemma)
@@ -144,8 +143,6 @@ def llama(data_loader,device):
         #     ├── norm (LlamaRMSNorm)
         #     └── rotary_emb (LlamaRotaryEmbedding)
         # └── lm_head (Linear)
-
-    acess_token_gemma= "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"
     # prompt = "Explain the theory of relativity in simple terms."
     print("Loading model...")
     tokenizer, model = load_model(model_name,acess_token_gemma)
