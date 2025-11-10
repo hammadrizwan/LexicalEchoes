@@ -48,6 +48,27 @@ from transformers import (
     AutoModelForCausalLM,
     AutoConfig,
 )
+# ==========================
+# Mappings
+# ==========================
+
+
+MODEL_MAPPING_DICT={"qwen":"Qwen/Qwen3-Embedding-8B","kalm":"HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5","e5":"intfloat/multilingual-e5-large-instruct",
+                    "promptriever":"samaya-ai/promptriever-llama3.1-8b-instruct-v1"}
+
+LAYER_MAPPING_DICT={"meta-llama/Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "meta-llama/Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "google/gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "google/gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "Qwen/Qwen3-Embedding-8B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35],
+                    "HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+                    }
 
 # ==========================
 # Utilities
@@ -468,18 +489,6 @@ def dump_sem_predictions(
 
 
 
-LAYER_MAPPING_DICT={"Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
-                    "Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
-                    "Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-                    "Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-                    "gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
-                    "gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
-                    "gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
-                    "gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
-                    "gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
-                    "gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
-                    "qwen":[33,34,35]
-                    }
 
 # ==========================
 # Main
@@ -488,7 +497,7 @@ LAYER_MAPPING_DICT={"Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model_id", type=str, default="google/gemma-3-12b-pt")
-    p.add_argument("--layers", type=int, nargs="+", default=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47])
+    p.add_argument("--layers", type=int, nargs="+", default=None)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--lr", type=float, default=5e-4)
@@ -498,6 +507,8 @@ def main():
     p.add_argument("--save_dir", type=str, default="./sem_lens_ckpt")
     p.add_argument("--dump_preds", type=int, default=100, help="If >0, dump N triplets with scores to JSON")
     args = p.parse_args()
+    if(args.layers==None):
+        args.layers=LAYER_MAPPING_DICT[args.model_id]
 
     mw = ModelWrapper(
         model_id=args.model_id,
@@ -506,13 +517,12 @@ def main():
     )
 
     
-    build_sem_loader_from_jsonl_counterfact
     train_loader = build_sem_loader_from_jsonl_counterfact(
         jsonl_path="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/counterfact/Counterfact_OpenAI.jsonl",
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=2,
-        max_examples=3000
+        max_examples=2000
     )
     test_loader = build_sem_loader_from_jsonl_counterfact(
         jsonl_path="/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/data/counterfact/Counterfact_OpenAI.jsonl",
@@ -561,7 +571,8 @@ def main():
     print("Evaluating on test split", flush=True)
     metrics = trainer.evaluate_norm_euclid_two_way(test_loader, layers=args.layers)
     print(json.dumps(metrics, indent=2))
-
+    with open("./sem_lens_ckpt/" + str(args.model_id.split("/")[-1]) + "_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2, ensure_ascii=False)
     os.makedirs(args.save_dir, exist_ok=True)
     torch.save({
         "state_dict": lens.state_dict(),
@@ -572,9 +583,9 @@ def main():
     }, os.path.join(args.save_dir, "sem_lens.pt"))
     print(f"Saved SEM lens to {os.path.join(args.save_dir, 'sem_lens.pt')}")
 
-    out_path = os.path.join(args.save_dir, "sem_triplet_scores.json")
-    dump_sem_predictions(test_loader, mw, lens, args.layers, limit=args.dump_preds, out_path=out_path)
-    print(f"Wrote sample triplet scores to {out_path}")
+    # out_path = os.path.join(args.save_dir, "sem_triplet_scores.json")
+    # dump_sem_predictions(test_loader, mw, lens, args.layers, limit=args.dump_preds, out_path=out_path)
+    # print(f"Wrote sample triplet scores to {out_path}")
 
 
 if __name__ == "__main__":
