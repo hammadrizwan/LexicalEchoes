@@ -7,17 +7,14 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import pandas as pd
 dir_path = os.path.dirname(os.path.abspath(__file__))
-# print(dir_path)
+print(dir_path+"/")
 sys.path.append(dir_path+"/")#add to load modules
-from helper_functions import apply_whitening_batch,bootstrap_ci_spearman,bootstrap_ci_los_q1q4,_jaccard_overlap_pct,_counts
+from helper_functions import apply_whitening_batch,_jaccard_overlap_pct,_counts, process_and_write#bootstrap_ci_spearman,bootstrap_ci_los_q1q4,
 from visualizations import analyze_and_save_distances
-import math
 import numpy as np
-from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
-from transformers import AutoTokenizer, AutoModel
 from torch import Tensor
-
+from model_loaders import get_model
 
 
 #----------------------------------------------------------------------------
@@ -58,7 +55,7 @@ def qwen_get_embeddings_batched(model, inputs, normalize=True):
 #----------------------------------------------------------------------------
 #region Qwen 8b Quora PAWS
 def qwen_quora_paws(data_loader,args,device):
-    model = load_model_sentence_transformer(device)
+    model = get_model(args.model_name,device)
     # print(model)
     # return None
     model.eval()
@@ -149,6 +146,7 @@ def last_token_pool_multi(layer_hidden: torch.Tensor,
     attention_mask: [B, T]  (1=token, 0=pad)
     returns: [L, B, H]  (last non-pad token per sequence, per layer)
     """
+    # print(layer_hidden.shape,attention_mask.shape)
     L, B, T, H = layer_hidden.shape
     # Detect left padding once for the batch
     left_padding = (attention_mask[:, -1].sum() == B)
@@ -167,10 +165,9 @@ def last_token_pool_multi(layer_hidden: torch.Tensor,
         return pooled
     
 def qwen_counterfact_scpp(data_loader,args,layers,device="auto"):
-    tokenizer, model = get_model_hugging_face(device)
+    model,tokenizer = get_model(args.model_type,device=device)
     model.eval()
-    print(model)
-    
+    # print(model)
     # Example: access specific fields
     
     all_fail_flags_by_layer = defaultdict(list)
@@ -217,7 +214,7 @@ def qwen_counterfact_scpp(data_loader,args,layers,device="auto"):
                                 ).to(model.device)
                 outputs = model(**inputs)
                 anchor_sentence_embeddings=last_token_pool_multi(torch.stack([ret[layer_key].output for layer_key in ret],dim=0),inputs["attention_mask"])
-
+            
                 inputs = tokenizer(
                                     paraphrases,
                                     padding=True,
@@ -234,7 +231,7 @@ def qwen_counterfact_scpp(data_loader,args,layers,device="auto"):
                 outputs = model(**inputs)
                 distractor_sentence_embeddings=last_token_pool_multi(torch.stack([ret[layer_key].output for layer_key in ret],dim=0),inputs["attention_mask"])
 
-                print(anchor_sentence_embeddings.shape,paraphrase_sentence_embeddings.shape,distractor_sentence_embeddings.shape)
+            
     
                 anchor_sentence_embeddings = torch.nn.functional.normalize(anchor_sentence_embeddings, p=2, dim=2, eps=1e-12)
                 paraphrase_sentence_embeddings = torch.nn.functional.normalize(paraphrase_sentence_embeddings, p=2, dim=2, eps=1e-12)
@@ -247,7 +244,6 @@ def qwen_counterfact_scpp(data_loader,args,layers,device="auto"):
 
 
                 distances_anchor_paraphrase = torch.norm(anchor_sentence_embeddings - paraphrase_sentence_embeddings, p=2,dim=2)
-            
                 distances_anchor_distractor   = torch.norm(anchor_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
                 distances_paraphrase_distractor = torch.norm(paraphrase_sentence_embeddings - distractor_sentence_embeddings, p=2,dim=2)
                 
@@ -336,100 +332,7 @@ def qwen_counterfact_scpp(data_loader,args,layers,device="auto"):
                         pos_pairs_by_layer[layer_key].append((anchor, paraphrase))
 
 
-            for layer in tqdm(layers, desc="Processing Layers Final"):
-                layer_key = str(layer)
-                layer_dir = os.path.join(args.save_path, layer_key)
-                os.makedirs(layer_dir, exist_ok=True)
-                summary_path = os.path.join(layer_dir, "counterfact_summary.jsonl")
-
-                # numpy conversions
-                LO_negmax_arr = np.asarray(LO_negmax_list_by_layer[layer_key], dtype=float)
-                all_fail_arr = np.asarray(all_fail_flags_by_layer[layer_key], dtype=int)
-                LOc_arr = np.asarray(LOc_list_by_layer[layer_key], dtype=float)
-                DISTc_arr = np.asarray(DISTc_list_by_layer[layer_key], dtype=float)
-                all_viols_arr = np.asarray(all_viols_by_layer[layer_key], dtype=float)
-
-                # failure stats
-                total_samples_layer = len(all_fail_arr)
-                total_failures_layer = int(all_fail_arr.sum()) if total_samples_layer > 0 else 0
-                failure_rate_layer = (total_failures_layer / total_samples_layer) if total_samples_layer > 0 else 0.0
-
-                margin_violation_layer = float(np.nansum(all_viols_arr)) if all_viols_arr.size > 0 else 0.0
-                avg_margin_violation_layer = (margin_violation_layer / total_failures_layer) if total_failures_layer > 0 else 0.0
-
-                # stratified fail rates by overlap (Q1 vs Q4)
-                fail_rate_high = np.nan
-                fail_rate_low = np.nan
-                fail_rate_gap = np.nan
-                rel_risk = np.nan
-                if LO_negmax_arr.size > 0 and all_fail_arr.size > 0:
-                    q1, q4 = np.quantile(LO_negmax_arr, [0.25, 0.75])
-                    low_bin = (LO_negmax_arr <= q1)
-                    high_bin = (LO_negmax_arr >= q4)
-                    if low_bin.any():
-                        fail_rate_low = float(all_fail_arr[low_bin].mean())
-                    if high_bin.any():
-                        fail_rate_high = float(all_fail_arr[high_bin].mean())
-                    if low_bin.any() and high_bin.any():
-                        fail_rate_gap = float(fail_rate_high - fail_rate_low)
-                        rel_risk = float(fail_rate_high / max(fail_rate_low, 1e-12))
-
-                # predictive power (AUC)
-                auc_overlap = np.nan
-                if all_fail_arr.size > 0 and (all_fail_arr.min() != all_fail_arr.max()):
-                    try:
-                        auc_overlap = float(roc_auc_score(all_fail_arr, LOc_arr))
-                    except Exception:
-                        auc_overlap = np.nan
-
-                # failure severity gap (within failures)
-                sev_gap = np.nan
-                mask_fail = (all_fail_arr == 1)
-                if mask_fail.any():
-                    Jf = LO_negmax_arr[mask_fail]
-                    Vf = all_viols_arr[mask_fail]
-                    if Jf.size > 0:
-                        jf_q1, jf_q4 = np.quantile(Jf, [0.25, 0.75])
-                        lo_f = Vf[Jf <= jf_q1]
-                        hi_f = Vf[Jf >= jf_q4]
-                        if lo_f.size > 0 and hi_f.size > 0:
-                            sev_gap = float(np.median(hi_f) - np.median(lo_f))
-
-                with open(summary_path, 'a') as jsonl_file_writer:
-                    json.dump({
-                        "layer": layer_key,
-                        "Failure Rate": failure_rate_layer,
-                        "Average Margin Violation": avg_margin_violation_layer,
-                        "FailRate_high_Q4": None if np.isnan(fail_rate_high) else fail_rate_high,
-                        "FailRate_low_Q1":  None if np.isnan(fail_rate_low)  else fail_rate_low,
-                        "FailRate_gap_Q4_minus_Q1": None if np.isnan(fail_rate_gap) else fail_rate_gap,
-                        "RelativeRisk_high_over_low": None if np.isnan(rel_risk) else rel_risk,
-                        "AUC_LOcontrast_to_failure": None if np.isnan(auc_overlap) else auc_overlap,
-                        "Failure_severity_median_gap_Q4_minus_Q1": None if np.isnan(sev_gap) else sev_gap
-                    }, jsonl_file_writer)
-                    jsonl_file_writer.write("\n")
-
-                # optional: per-layer plots
-                _ = analyze_and_save_distances(
-                    incorrect_pairs_by_layer[layer_key],
-                    correct_pairs_by_layer[layer_key],
-                    title_prefix=f"Counterfact_Layer_{layer_key}",
-                    out_dir=layer_dir,
-                    group_neg_name="Non-Paraphrase",
-                    group_pos_name="Paraphrase",
-                    neg_text_pairs=neg_pairs_by_layer[layer_key],
-                    pos_text_pairs=pos_pairs_by_layer[layer_key],
-                    neg_color="#2EA884",
-                    pos_color="#D7732D",
-                    hist_alpha=0.35,
-                    kde_linewidth=2.0,
-                    ecdf_linewidth=2.0,
-                    tau_color="#000000",
-                    tau_linestyle="--",
-                    tau_linewidth=1.5,
-                    violin_facealpha=0.35,
-                    box_facealpha=0.35,
-                )
+    process_and_write(args, layers, LO_negmax_list_by_layer, all_fail_flags_by_layer, LOc_list_by_layer, DISTc_list_by_layer, all_viols_by_layer, incorrect_pairs_by_layer, correct_pairs_by_layer, neg_pairs_by_layer, pos_pairs_by_layer)
     
 # def qwen_counterfact_scpp(data_loader,args,device="auto"):
 #     model = get_model(device)

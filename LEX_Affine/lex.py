@@ -29,12 +29,38 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-
+from get_token import *
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     AutoConfig,
 )
+
+# ==========================
+# Configurations
+# ==========================
+
+
+
+MODEL_MAPPING_DICT={"qwen":"Qwen/Qwen3-Embedding-8B","kalm":"HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5","e5":"intfloat/multilingual-e5-large-instruct",
+                    "promptriever":"samaya-ai/promptriever-llama3.1-8b-instruct-v1"}
+
+LAYER_MAPPING_DICT={"meta-llama/Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
+                    "meta-llama/Llama-3.2-1B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "meta-llama/Llama-3.2-1B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                    "google/gemma-3-1b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-1b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25],
+                    "google/gemma-3-4b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
+                    "google/gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "google/gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
+                    "Qwen/Qwen3-Embedding-8B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35],
+                    "HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+                    }
+                    
+
+ACCESS_TOKEN=get_token()
 
 # ==========================
 # Utilities
@@ -71,6 +97,7 @@ class ModelWrapper:
     def __init__(
         self,
         model_id: str,
+        use_chat_template: bool = False,
         device: Optional[str] = None,
         trust_remote_code: bool = True,
         attn_implementation: Optional[str] = None,  # e.g., "flash_attention_2"
@@ -79,7 +106,7 @@ class ModelWrapper:
     ):
         self.model_id = model_id
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.use_chat_template = use_chat_template
         config = AutoConfig.from_pretrained(model_id, trust_remote_code=trust_remote_code)
         kwargs = dict(
             torch_dtype=torch.float32,
@@ -123,14 +150,27 @@ class ModelWrapper:
         return self.input_embeddings.weight
 
     def tokenize_batch(self, texts: List[str], seq_len: int, add_special_tokens: bool = True) -> Dict[str, torch.Tensor]:
-        enc = self.tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=seq_len,
-            return_tensors="pt",
-            add_special_tokens=add_special_tokens,
-        )
+        if self.use_chat_template:
+            texts = [self._apply_template(t) for t in texts]
+            enc = self.tokenizer(
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=seq_len,
+                return_tensors="pt",
+                add_special_tokens=False,          # template already inserts specials
+                return_special_tokens_mask=True,   # useful to build valid_mask later
+            )
+        else:
+            enc = self.tokenizer(
+                texts,
+                padding=True,
+                truncation=True,
+                max_length=seq_len,
+                return_tensors="pt",
+                add_special_tokens=add_special_tokens,
+                return_special_tokens_mask=True,   # optional but handy
+            )
         return enc
 
     @torch.no_grad()
@@ -402,13 +442,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model_id", type=str, default="google/gemma-3-12b-pt")
     # p.add_argument("--dataset_path", type=str, required=True, help="Plain text file to stream tokens from")
-    p.add_argument("--layers", type=int, nargs="+", default=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47], help="Indices into hidden_states tuple")
+    p.add_argument("--layers", type=int, nargs="+", default=None, help="Indices into hidden_states tuple")
     p.add_argument("--seq_len", type=int, default=50)
     p.add_argument("--batch_size", type=int, default=4)
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=1e-4)
-    p.add_argument("--l2_to_identity", type=float, default=0.0)
+    p.add_argument("--l2_to_identity", type=float, default=1e-6)
     p.add_argument("--use_amp", action="store_true")
     p.add_argument("--device_map", type=str, default=None)
     p.add_argument("--save_dir", type=str, default="./revlexlens_ckpt")
@@ -417,91 +457,99 @@ def main():
 
     args = p.parse_args()
 
+    if(args.layers==None):
+        args.layers=LAYER_MAPPING_DICT[args.model_id]
+    use_chat_template=False
+    if("it" in args.model_id):
+        use_chat_template=True
     mw = ModelWrapper(
         model_id=args.model_id,
         device_map=args.device_map,
         attn_implementation=None,
+        use_chat_template=use_chat_template,
     )
 
-#     # Build loaders
-#     # train_loader = build_loaders(args.dataset_path, mw.tokenizer, args.seq_len, args.batch_size)
-#     train_loader = build_wikitext_loaders(
-#         tokenizer=mw.tokenizer,
-#             seq_len=50,
-#             batch_size=args.batch_size,
-#             split="train",
-#             name="wikitext-103-raw-v1",  # or "wikitext-2-raw-v1"
-#             streaming=False              # True for huge runs
-#     )
-#     print("Data Loaded")
-#     # Lens configs
-#     lens_cfg = LensConfig(
-#         layers=args.layers,
-#         lr=args.lr,
-#         weight_decay=args.weight_decay,
-#         epochs=args.epochs,
-#         l2_to_identity=args.l2_to_identity,
-#         use_amp=args.use_amp,
-#     )
+    # Build loaders
+    # train_loader = build_loaders(args.dataset_path, mw.tokenizer, args.seq_len, args.batch_size)
+    train_loader = build_wikitext_loaders(
+        tokenizer=mw.tokenizer,
+            seq_len=50,
+            batch_size=args.batch_size,
+            split="train",
+            name="wikitext-103-raw-v1",  # or "wikitext-2-raw-v1"
+            streaming=False              # True for huge runs
+    )
+    print("Data Loaded")
+    # Lens configs
+    lens_cfg = LensConfig(
+        layers=args.layers,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        epochs=args.epochs,
+        l2_to_identity=args.l2_to_identity,
+        use_amp=args.use_amp,
+    )
 
-#     device = mw.model.device if hasattr(mw.model, 'device') else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = mw.model.device if hasattr(mw.model, 'device') else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-#     lens = ReverseLexicalLens(
-#         d_model=mw.d_model,
-#         vocab_size=mw.vocab_size,
-#         E=mw.E_weight.to(device),
-#         layers=args.layers,
-#         cfg=lens_cfg,
-#     ).to(device)
+    lens = ReverseLexicalLens(
+        d_model=mw.d_model,
+        vocab_size=mw.vocab_size,
+        E=mw.E_weight.to(device),
+        layers=args.layers,
+        cfg=lens_cfg,
+    ).to(device)
 
-#     trainer = ReverseLexicalLensTrainer(
-#         model_wrap=mw,
-#         lens=lens,
-#         train_cfg=TrainConfig(
-#             seq_len=args.seq_len,
-#             epochs=args.epochs,
-#             lr=args.lr,
-#             weight_decay=args.weight_decay,
-#             use_amp=args.use_amp,
-#         ),
-#     )
+    trainer = ReverseLexicalLensTrainer(
+        model_wrap=mw,
+        lens=lens,
+        train_cfg=TrainConfig(
+            seq_len=args.seq_len,
+            epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            use_amp=args.use_amp,
+        ),
+    )
     
-#     test_loader = build_wikitext_loaders(
-#         tokenizer=mw.tokenizer,
-#             seq_len=50,
-#             batch_size=args.batch_size,
-#             split="test",
-#             name="wikitext-103-raw-v1",  # or "wikitext-2-raw-v1"
-#             streaming=False              # True for huge runs
-#     )
-#     print("Starting training of Reverse Lexical Lens", flush=True)
-#     trainer.train_epochs(train_loader, layers=args.layers, epochs=args.epochs)
+    test_loader = build_wikitext_loaders(
+        tokenizer=mw.tokenizer,
+            seq_len=50,
+            batch_size=args.batch_size,
+            split="test",
+            name="wikitext-103-raw-v1",  # or "wikitext-2-raw-v1"
+            streaming=False              # True for huge runs
+    )
+    print("Starting training of Reverse Lexical Lens", flush=True)
+    trainer.train_epochs(train_loader, layers=args.layers, epochs=args.epochs)
 
-#     # quick evaluation on the training loader for demo purposes
-#     print("Evaluating (on test set)")
-#     metrics = trainer.evaluate(test_loader, layers=args.layers)
-#     print(json.dumps(metrics, indent=2))
+    # quick evaluation on the training loader for demo purposes
+    print("Evaluating (on test set)")
+    metrics = trainer.evaluate(test_loader, layers=args.layers)
+    print(json.dumps(metrics, indent=2))
+    with open("./revlexlens_ckpt/" + str(args.model_id.split("/")[-1]) + "_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2, ensure_ascii=False)
 
-#     # Save lens
-#     os.makedirs(args.save_dir, exist_ok=True)
-#     torch.save({
-#         "state_dict": lens.state_dict(),
-#         "config": asdict(lens_cfg),
-#         "model_id": args.model_id,
-#         "layers": args.layers,
-#         "d_model": mw.d_model,
-#         "vocab_size": mw.vocab_size,
-#     }, os.path.join(args.save_dir, "lens.pt"))
-#     print(f"Saved lens to {os.path.join(args.save_dir, 'lens.pt')}")
-#     dump_layer_topk_structured(
-#     loader=test_loader,
-#     mw=mw,
-#     lens=lens,
-#     layers=args.layers,
-#     topk=1,
-#     limit=1,
-#     out_path=os.path.join(args.save_dir, "layer_top1.jsonl"),
-# )
+    # Save lens
+    os.makedirs(args.save_dir, exist_ok=True)
+    torch.save({
+        "state_dict": lens.state_dict(),
+        "config": asdict(lens_cfg),
+        "model_id": args.model_id,
+        "layers": args.layers,
+        "d_model": mw.d_model,
+        "vocab_size": mw.vocab_size,
+    }, os.path.join(args.save_dir, "lens.pt"))
+    print(f"Saved lens to {os.path.join(args.save_dir, 'lens.pt')}")
+    dump_layer_topk_structured(
+    loader=test_loader,
+    mw=mw,
+    lens=lens,
+    layers=args.layers,
+    topk=1,
+    limit=1,
+    out_path=os.path.join(args.save_dir, "layer_top1.jsonl"),
+)
 
 
 # ---- utilities for dumping predictions ----

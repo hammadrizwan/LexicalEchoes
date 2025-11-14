@@ -34,8 +34,10 @@ from get_token import *
 LAYER_TEMPLATE_DICT={"google/gemma-3-1b-pt":["model.layers.{}"],"google/gemma-3-4b-pt":["model.language_model.layers.{}"],"google/gemma-3-12b-pt":["model.language_model.layers.{}"],
                     "google/gemma-3-1b-it":["model.layers.{}"],"google/gemma-3-4b-it":["model.language_model.layers.{}"],"google/gemma-3-12b-it":["model.language_model.layers.{}"],
                     "meta-llama/Llama-3.2-1B":["model.layers.{}"],"meta-llama/Llama-3.2-1B-Instruct":["model.layers.{}"],"meta-llama/Llama-3.2-3B":["model.layers.{}"],"meta-llama/Llama-3.2-3B-Instruct":["model.layers.{}"],
-                    "qwen":["layers.{}"]#add the other models and fix qwen
+                    "Qwen/Qwen3-Embedding-8B":["layers.{}"],"HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5":["0.auto_model.layers.{}"]#add the other models and fix qwen
                     }
+MODEL_MAPPING_DICT={"qwen":"Qwen/Qwen3-Embedding-8B","kalm":"HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5","e5":"intfloat/multilingual-e5-large-instruct",
+                    "promptriever":"samaya-ai/promptriever-llama3.1-8b-instruct-v1"}
 
 LAYER_MAPPING_DICT={"meta-llama/Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
                     "meta-llama/Llama-3.2-3B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27],
@@ -47,7 +49,8 @@ LAYER_MAPPING_DICT={"meta-llama/Llama-3.2-3B-Instruct":[1,2,3,4,5,6,7,8,9,10,11,
                     "google/gemma-3-4b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33],
                     "google/gemma-3-12b-pt":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
                     "google/gemma-3-12b-it":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47],
-                    "qwen":[33,34,35]#fix
+                    "Qwen/Qwen3-Embedding-8B":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35],
+                    "HIT-TMG/KaLM-embedding-multilingual-mini-instruct-v1.5":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
                     }
                     
 
@@ -423,6 +426,7 @@ if __name__ == "__main__":
     print("args",args.mode)
     if(args.device=="auto"):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+    print("Using device:", device)
     torch.manual_seed(args.seed)
     if(args.data_type=="easyedit"):
         file_path_counterfact=args.dataset_path_easyedit
@@ -492,6 +496,7 @@ if __name__ == "__main__":
         gemma_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,formated_layers,device)
         # gemma_it_counterfact_scpp(data_loader,args,ACCESS_TOKEN,LAYER_MAPPING_DICT,device)
     elif(args.model_type=="qwen"):
+        args.model_type = MODEL_MAPPING_DICT[args.model_type]
         if not os.path.exists(args.save_path):
             os.makedirs(args.save_path)
         formated_layers=[]
@@ -504,14 +509,25 @@ if __name__ == "__main__":
             formated_layers.append(layer_string)
         qwen_counterfact_scpp(data_loader,args,formated_layers,device)
     elif(args.model_type=="e5"):
+        args.model_type = MODEL_MAPPING_DICT[args.model_type]
         if not os.path.exists(args.save_path):
             os.makedirs(args.save_path)
         e5_counterfact_scpp(data_loader,args,device)
     elif(args.model_type=="kalm"):
+        args.model_type = MODEL_MAPPING_DICT[args.model_type]
         if not os.path.exists(args.save_path):
             os.makedirs(args.save_path)
-        kalm_counterfact_scpp(data_loader,args,device)
+        formated_layers=[]
+        for layer in LAYER_MAPPING_DICT[args.model_type]:
+            layer_string=LAYER_TEMPLATE_DICT[args.model_type][0].format(layer)
+            print(layer_string)
+            layer_file_path=args.save_path+str(layer_string)+"/"
+            if not os.path.exists(layer_file_path):
+                os.makedirs(layer_file_path)
+            formated_layers.append(layer_string)
+        kalm_counterfact_scpp(data_loader,args,formated_layers,device)
     elif(args.model_type=="promptriever"):
+        args.model_type = MODEL_MAPPING_DICT[args.model_type]
         if not os.path.exists(args.save_path):
             os.makedirs(args.save_path)
         promptretriever_counterfact_scpp(data_loader,args,device)

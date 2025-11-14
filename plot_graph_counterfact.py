@@ -27,7 +27,7 @@ def _read_last_jsonl(path):
                 continue
     return last_obj
 
-def collect_layer_summaries(load_path, summary_filename="counterfact_summary.jsonl"):
+def collect_layer_summaries(load_path, summary_filename="results_summary.jsonl"):
     """return (layers_sorted, summaries_sorted) where layers_sorted are numeric indices if possible"""
     entries = []
     for name in os.listdir(load_path):
@@ -127,10 +127,11 @@ paths=[
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-it_lasttoken/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-it_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-it_lasttoken/",
-       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_averaging/",
-       "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_lasttoken/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_averaging/",
+    #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-1b-pt_lasttoken/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-pt_averaging/",
     #    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/gemma-3-12b-pt_lasttoken/"
+    "/home/hrk21/projects/def-hsajjad/hrk21/LexicalBias/Lexical_Semantic_Quantification/counterfact_analysis/qwen/"
        ]
 for path in paths:
     model_name=path.split("/")[-2]

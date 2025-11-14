@@ -85,7 +85,7 @@ def load_from_sentence_transformer(model_name="HIT-TMG/KaLM-embedding-multilingu
     model = SentenceTransformer(model_name).to(device)
     return model
 
-def load_from_automodel(model_name="intfloat/multilingual-e5-large-instruct", device="auto"):
+def load_from_automodel(model_name="intfloat/multilingual-e5-large-instruct",access_token=None, device="auto"):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModel.from_pretrained(model_name).to(device)
     return model,tokenizer
@@ -105,10 +105,10 @@ def get_model(model_name="llama",access_token=None,device="auto"):
     if("llama" in model_name or "gemma" in model_name):
         model, tokenizer  = load_from_causal(model_name,access_token,device)
         return model, tokenizer
-    elif("e5" in model_name or "qwen" in model_name):
+    elif("e5" in model_name or "Qwen" in model_name):
         model, tokenizer = load_from_automodel(model_name,access_token,device)
         return model, tokenizer
-    elif("kalm" in model_name):
+    elif("KaLM" in model_name):
             return load_from_sentence_transformer(model_name,device)
     elif("promptriever" in model_name):
             return load_promptriever(device)
